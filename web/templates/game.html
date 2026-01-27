@@ -1,0 +1,38 @@
+{{define "game.html"}}
+<div class="game-layout">
+    <aside class="gutter left-gutter">
+        <div class="player-avatar">{{if .playerName}}<div class="you">You</div>{{end}}</div>
+        <div class="power-rail" id="powerRail"></div>
+    </aside>
+
+    <main class="table-area">
+        <div class="game-header">
+            <div class="game-code">Game: <span id="displayGameId">{{.gameID}}</span></div>
+            {{if .playerName}}<div class="player-name">{{.playerName}} ({{.playerRole}})</div>{{end}}
+        </div>
+
+        <canvas id="billiardsTable" aria-label="Billiards table"></canvas>
+
+        <div id="status" class="status-line"></div>
+    </main>
+
+    <aside class="gutter right-gutter">
+        <div class="players-list">
+            <div class="player">{{.player1}}</div>
+            <div class="player">{{.player2}}</div>
+        </div>
+    </aside>
+
+    <script type="module" src="/static/js/script.js"></script>
+    <script>
+        // Ensure module attached initGame to window, then call it
+        (function waitInit() {
+            if (window.initGame) {
+                window.initGame('{{.gameID}}','{{.playerName}}');
+            } else {
+                setTimeout(waitInit, 50);
+            }
+        })();
+    </script>
+</div>
+{{end}}

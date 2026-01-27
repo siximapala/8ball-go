@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎱 8 Ball Game</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>🎱 Magic 8 Ball</h1>
+        <div id="content">
+            {{if .gameID}}
+                {{template "game.html" .}}
+            {{else}}
+                {{template "join.html" .}}
+            {{end}}
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,39 @@
+{{define "join.html"}}
+<div class="join-section">
+    <div class="join-form">
+        <h2>Welcome!</h2>
+        <p>Enter your name to play</p>
+        <form hx-post="/join" hx-target="#content" hx-swap="innerHTML">
+            <input 
+                type="text" 
+                name="player_name" 
+                placeholder="Your name"
+                required
+                maxlength="20"
+                autofocus
+            />
+            <button type="submit">Join Game</button>
+        </form>
+        <div class="divider">or</div>
+        <p style="font-size: 0.9rem; color: #666;">
+            Have a game code? Enter it below
+        </p>
+        <form hx-post="/join" hx-target="#content" hx-swap="innerHTML" style="margin-top: 1rem;">
+            <input 
+                type="text" 
+                name="player_name" 
+                placeholder="Your name"
+                required
+                maxlength="20"
+            />
+            <input 
+                type="text" 
+                name="game_id" 
+                placeholder="Game code"
+                maxlength="8"
+            />
+            <button type="submit">Join Existing Game</button>
+        </form>
+    </div>
+</div>
+{{end}}
