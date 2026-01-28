@@ -133,6 +133,14 @@ button:disabled {
     font-size: 0.9rem;
 }
 
+.players-header { display:flex; gap:0.75rem; align-items:center; }
+.player-info-name { font-weight:700; color:#333; font-size:0.95rem; display:inline-flex; align-items:center; gap:6px; }
+
+.turn-indicator { width:0; height:0; display:inline-block; transform: translateY(-1px); }
+.turn-indicator.active { border-left:6px solid transparent; border-right:6px solid transparent; border-bottom:10px solid #28a745; }
+/* show small triangle before header player name when active */
+.player-info-name.active::before { content: '' ; display:inline-block; margin-right:6px; width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-bottom:10px solid #28a745; transform: translateY(-1px); }
+
 /* Canvas */
 #billiardsTable {
     width: 100%;
@@ -509,5 +517,12 @@ form {
     .game-layout { padding: 0; }
     .gutter { display: none; }
     .table-area { padding: 8px; }
-    #billiardsTable { max-width: none; width: 65vw; height: 70vh; border-radius: 0; border-width: 6px; }
+    /* Make the billiards table take most of the viewport for comfortable play */
+    #billiardsTable { max-width: none; width: 100vw; height: calc(100vh - 130px); border-radius: 6px; border-width: 6px; }
+    #gameContainer { padding: 8px; }
+    .game-header { margin-bottom: 6px; padding-bottom: 6px; }
+    .player-info-name { font-size: 0.95rem; font-weight:700; }
+    .players-list .player { font-size: 0.85rem; padding: 6px 8px; }
+    /* Hide textual status; we use indicators next to names */
+    #status { display: none !important; }
 }

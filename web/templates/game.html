@@ -8,7 +8,10 @@
     <main class="table-area">
         <div class="game-header">
             <div class="game-code">Game: <span id="displayGameId">{{.gameID}}</span></div>
-            {{if .playerName}}<div class="player-name">{{.playerName}} ({{.playerRole}})</div>{{end}}
+            <div class="players-header">
+                <span id="player1Info" class="player-info-name">{{.player1}}</span>
+                <span id="player2Info" class="player-info-name">{{.player2}}</span>
+            </div>
         </div>
 
         <canvas id="billiardsTable" aria-label="Billiards table"></canvas>
@@ -18,8 +21,8 @@
 
     <aside class="gutter right-gutter">
         <div class="players-list">
-            <div class="player">{{.player1}}</div>
-            <div class="player">{{.player2}}</div>
+            <div id="player1" class="player"><span class="turn-indicator" aria-hidden="true"></span>{{.player1}}</div>
+            <div id="player2" class="player"><span class="turn-indicator" aria-hidden="true"></span>{{.player2}}</div>
         </div>
     </aside>
 

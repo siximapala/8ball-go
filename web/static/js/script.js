@@ -203,10 +203,27 @@ function shoot(angle, power) {
 }
 
 function updateUI(data) {
+    // Replace textual status with compact turn indicators next to player names.
     const status = document.getElementById('status');
-    if (!status) return;
-    if (data.is_moving) status.textContent = '...';
-    else status.textContent = (data.current_player === 1 ? "Ход Игрока 1" : "Ход Игрока 2");
+    if (status) status.style.display = 'none';
+
+    // Header player name indicators
+    const p1Header = document.getElementById('player1Info');
+    const p2Header = document.getElementById('player2Info');
+    if (p1Header) { if (data.current_player === 1) p1Header.classList.add('active'); else p1Header.classList.remove('active'); }
+    if (p2Header) { if (data.current_player === 2) p2Header.classList.add('active'); else p2Header.classList.remove('active'); }
+
+    // Sidebar / gutter indicators (if present)
+    const gut1 = document.getElementById('player1');
+    const gut2 = document.getElementById('player2');
+    if (gut1) {
+        const ind = gut1.querySelector('.turn-indicator');
+        if (ind) ind.classList.toggle('active', data.current_player === 1);
+    }
+    if (gut2) {
+        const ind = gut2.querySelector('.turn-indicator');
+        if (ind) ind.classList.toggle('active', data.current_player === 2);
+    }
 }
 
 // === РЕНДЕР ===
