@@ -138,8 +138,6 @@ button:disabled {
     width: 100%;
     height: auto;
     display: block;
-    background-color: #1a8c3a;
-    border: 8px solid #4a2511;
     border-radius: 4px;
     margin-bottom: 1.5rem;
     box-shadow: inset 0 4px 12px rgba(0, 0, 0, 0.3);

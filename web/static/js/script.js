@@ -244,14 +244,6 @@ function drawTable() {
     const offsetX = (rect.width - drawTotalW) / 2;
     const offsetY = (rect.height - drawTotalH) / 2;
 
-    // 1) Рисуем фон (древесная плита под столом)
-    ctx.fillStyle = '#2f1f16'; // тёмный фон под стол
-    ctx.fillRect(0, 0, rect.width, rect.height);
-
-    // 2) Рисуем "древо" (основная рамка под стол)
-    ctx.fillStyle = '#5c3a21';
-    ctx.fillRect(offsetX, offsetY, drawTotalW, drawTotalH);
-
     // 3) play area (внутреннее зелёное поле)
     const playX = offsetX + RAIL_SIZE * scale;
     const playY = offsetY + RAIL_SIZE * scale;
