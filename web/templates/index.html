@@ -61,7 +61,7 @@
                 body: `player_name=${encodeURIComponent(playerName)}&game_id=${gameId}`
             }).then(r => r.text()).then(html => {
                 document.getElementById('menu').style.display = 'none';
-                document.getElementById('gameContainer').style.display = 'block';
+                document.getElementById('gameContainer').style.display = 'flex';
                 document.getElementById('displayGameId').textContent = gameId;
                 initGame(gameId, playerName);
             });
@@ -77,8 +77,8 @@
                 headers: {'Content-Type': 'application/x-www-form-urlencoded'},
                 body: `player_name=${encodeURIComponent(playerName)}&game_id=${gameId}`
             }).then(r => r.text()).then(html => {
-                document.getElementById('menu').style.display = 'none';
-                document.getElementById('gameContainer').style.display = 'block';
+                document.getElementById('menu').style.display = 'flex';
+                document.getElementById('gameContainer').style.display = 'flex';
                 document.getElementById('displayGameId').textContent = gameId;
                 initGame(gameId, playerName);
             });

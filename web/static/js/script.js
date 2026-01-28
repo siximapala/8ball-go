@@ -115,35 +115,17 @@ function initGame(id, playerName) {
 
 // Адаптивный ресайз: вписывает стол в экран с учетом бортов
 function resizeCanvas() {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    // Use the canvas element's CSS-rendered size for the drawing buffer
+    // Do NOT modify `canvas.style.position/left/top` here — layout should be handled by HTML/CSS.
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.max(1, Math.round(rect.width));
+    const h = Math.max(1, Math.round(rect.height));
 
-    // Пропорции стола + борта
-    // Полная ширина = 1400 + 2*RAIL_SIZE
-    const fullTableWidth = TABLE_WIDTH + (RAIL_SIZE * 2);
-    const fullTableHeight = TABLE_HEIGHT + (RAIL_SIZE * 2);
-    const targetRatio = fullTableWidth / fullTableHeight;
-    
-    const screenRatio = w / h;
-
-    let finalW, finalH;
-
-    // Вписываем в экран (contain)
-    if (screenRatio > targetRatio) {
-        finalH = h;
-        finalW = finalH * targetRatio;
-    } else {
-        finalW = w;
-        finalH = finalW / targetRatio;
+    // Keep the canvas drawing buffer in sync with its CSS size so drawings are crisp
+    if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
     }
-
-    canvas.width = finalW;
-    canvas.height = finalH;
-    
-    // Центрируем CSS
-    canvas.style.position = 'absolute';
-    canvas.style.left = `${(w - finalW) / 2}px`;
-    canvas.style.top = `${(h - finalH) / 2}px`;
 }
 
 // Перевод координат экрана в координаты стола
@@ -218,7 +200,7 @@ function gameLoop() {
 function drawTable() {
     // Вычисляем масштаб отрисовки
     // canvas.width = (TABLE_WIDTH + 2*RAIL_SIZE) * scaleFactor
-    const totalGameWidth = TABLE_WIDTH + (RAIL_SIZE * 2);
+    const totalGameWidth = (TABLE_WIDTH + (RAIL_SIZE * 2));
     const scale = canvas.width / totalGameWidth;
     
     // 1. Рисуем деревянный борт (весь канвас)

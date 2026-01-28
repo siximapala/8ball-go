@@ -131,8 +131,6 @@ func (s *GameService) CreateGame(gameID string) *GameState {
 	return game
 }
 
-// и так далее...
-
 func (s *GameService) UpdateGameState(gameID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -149,9 +147,6 @@ func (s *GameService) UpdateGameState(gameID string) {
 	if dt > 0.05 {
 		dt = 0.05
 	}
-
-	// ЛОГИКА ФИЗИКИ ОСТАЛАСЬ ТА ЖЕ, ЧТО ТЫ ПРИСЛАЛ
-	// Только проверки координат (бортов) теперь используют новые width/height
 
 	for _, ball := range game.Balls {
 		if ball.Pocketed {
@@ -294,7 +289,6 @@ func (game *GameState) checkPocketing(ball *Ball) {
 }
 
 func (game *GameState) checkBallCollision(b1, b2 *Ball) {
-	// ЛОГИКА БЕЗ ИЗМЕНЕНИЙ (копируем из твоего файла)
 	if b1.Pocketed || b2.Pocketed {
 		return
 	}
