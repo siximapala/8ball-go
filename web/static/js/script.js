@@ -4,161 +4,196 @@ let ctx = null;
 let gameState = null;
 let mouseAngle = -Math.PI / 2; // По умолчанию кий смотрит вверх
 let grabbed = false;
-let pullPos = { x: 0, y: 0 }; 
+let pullPos = { x: 0, y: 0 };
 let computedPower = 0;
 
 // === КОНСТАНТЫ РАЗМЕРОВ (Вертикальная ориентация) ===
 // Эти координаты соответствуют физике на сервере
-const TABLE_WIDTH = 1400;  
-const TABLE_HEIGHT = 2800; 
+const TABLE_WIDTH = 1400;
+const TABLE_HEIGHT = 2800;
 
 // Визуальные настройки
-const RAIL_SIZE = 80; // Ширина деревянного борта (рисуется снаружи игрового поля)
-const MAX_PULL_DIST = 500; // На сколько пикселей можно оттянуть мышь для 100% силы
-const VISUAL_CUE_MAX_LEN = 800; // Визуальное ограничение длины кия (чтобы не был бесконечным)
+const RAIL_SIZE = 80; // Ширина деревянного борта (game units)
+const MAX_PULL_DIST = 500; // На сколько в игровых единицах можно оттянуть мышь для 100% силы
+const VISUAL_CUE_MAX_LEN = 800; // В игровых единицах (макс длины кия)
+const VISUAL_CUE_DEFAULT_LEN = 300;
+const VISUAL_CUE_MIN_LEN = 30; // В игровых единицах (минимальная длина кия)
+
+// --- Вспомогательные состояния для рендера ---
+let dpr = 1;                       // devicePixelRatio
+let lastRect = { width: 0, height: 0 };
+let totalGameWidth = TABLE_WIDTH + RAIL_SIZE * 2;
+let totalGameHeight = TABLE_HEIGHT + RAIL_SIZE * 2;
+
+// Debounce helper
+function debounce(fn, ms = 100) {
+    let t;
+    return (...args) => {
+        clearTimeout(t);
+        t = setTimeout(() => fn(...args), ms);
+    };
+}
 
 function initGame(id, playerName) {
     gameId = id;
     canvas = document.getElementById('billiardsTable');
+    if (!canvas) throw new Error('Canvas #billiardsTable not found');
     ctx = canvas.getContext('2d');
-    
-    // Первичная настройка размера
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
 
-    console.log(`Game initialized: ${id}`);
-    
-    // Запуск цикла отрисовки
+    // Setup DPR-aware canvas size
+    resizeCanvas();
+    window.addEventListener('resize', debounce(resizeCanvas, 120));
+    window.addEventListener('orientationchange', debounce(resizeCanvas, 200));
+
+    // Start animation loop
     requestAnimationFrame(gameLoop);
 
-    // Скрываем старые контролы, если они есть
+    // Hide legacy controls (optional)
     const controls = document.getElementById('controls');
     if (controls) controls.style.display = 'none';
 
-    // Подключение к SSE
+    // SSE (обновление состояния от сервера)
     const es = new EventSource(`/events?game_id=${gameId}`);
     es.onmessage = (e) => {
         try {
             const data = JSON.parse(e.data);
             gameState = data;
             updateUI(data);
-        } catch (err) { console.error(err); }
-    };
-
-    // === УПРАВЛЕНИЕ (Мышь + Тач) ===
-    
-    const handleStart = (clientX, clientY) => {
-        if (gameState && gameState.is_moving) return;
-
-        const pos = screenToGame(clientX, clientY);
-        
-        // Проверяем, попали ли рядом с битком
-        if (gameState && gameState.balls) {
-            const cueBall = gameState.balls.find(b => b.number === 0 && !b.pocketed);
-            if (cueBall) {
-                const dist = Math.hypot(pos.x - cueBall.x, pos.y - cueBall.y);
-                // Увеличенный радиус захвата для удобства на телефоне
-                if (dist < 250) {
-                    grabbed = true;
-                    // Запоминаем точку нажатия как "точку захвата"
-                    pullPos = pos;
-                    updateAim(pos.x, pos.y, cueBall);
-                }
-            }
+        } catch (err) {
+            console.error('SSE parse error', err);
         }
     };
+    es.onerror = (err) => console.error('EventSource error', err);
 
-    const handleMove = (clientX, clientY) => {
-        const pos = screenToGame(clientX, clientY);
-
-        if (gameState) {
-            const cueBall = gameState.balls.find(b => b.number === 0 && !b.pocketed);
-            if (cueBall) {
-                if (grabbed) {
-                    updateAim(pos.x, pos.y, cueBall);
-                } else {
-                    // Просто водим мышкой (прицел без силы)
-                    mouseAngle = Math.atan2(cueBall.y - pos.y, cueBall.x - pos.x);
-                }
-            }
-        }
-    };
-
-    const handleEnd = () => {
-        if (grabbed) {
-            grabbed = false;
-            if (computedPower > 0.05) { // Мин. порог силы
-                shoot(mouseAngle, computedPower);
-            }
-            computedPower = 0;
-        }
-    };
-
-    // Mouse Events
+    // Input handlers
     canvas.addEventListener('mousedown', e => handleStart(e.clientX, e.clientY));
     document.addEventListener('mousemove', e => handleMove(e.clientX, e.clientY));
     document.addEventListener('mouseup', handleEnd);
 
-    // Touch Events (Mobile)
     canvas.addEventListener('touchstart', e => {
+        if (!e.touches || e.touches.length === 0) return;
         e.preventDefault();
-        handleStart(e.touches[0].clientX, e.touches[0].clientY);
+        const t = e.touches[0];
+        handleStart(t.clientX, t.clientY);
     }, { passive: false });
-    
     document.addEventListener('touchmove', e => {
-        if (grabbed) e.preventDefault(); // Блокируем скролл при натягивании
-        handleMove(e.touches[0].clientX, e.touches[0].clientY);
+        if (grabbed) e.preventDefault();
+        if (!e.touches || e.touches.length === 0) return;
+        const t = e.touches[0];
+        handleMove(t.clientX, t.clientY);
     }, { passive: false });
-    
     document.addEventListener('touchend', handleEnd);
 }
 
-// Адаптивный ресайз: вписывает стол в экран с учетом бортов
+// === RESIZE: стабильно настраиваем canvas под CSS-ширину и DPR ===
 function resizeCanvas() {
-    // Use the canvas element's CSS-rendered size for the drawing buffer
-    // Do NOT modify `canvas.style.position/left/top` here — layout should be handled by HTML/CSS.
+    if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const w = Math.max(1, Math.round(rect.width));
-    const h = Math.max(1, Math.round(rect.height));
+    // guard
+    if (!rect.width || !rect.height) return;
 
-    // Keep the canvas drawing buffer in sync with its CSS size so drawings are crisp
-    if (canvas.width !== w || canvas.height !== h) {
-        canvas.width = w;
-        canvas.height = h;
+    dpr = window.devicePixelRatio || 1;
+
+    // Выставляем физические размеры холста (device pixels)
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+
+    // ВАЖНО: матрица так, чтобы далее рисовать в CSS px
+    // Если использовать setTransform, координаты далее — CSS px.
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    lastRect.width = rect.width;
+    lastRect.height = rect.height;
+}
+
+// === ПРЕОБРАЗОВАНИЯ КООРДИНАТ ===
+// screen coords (clientX, clientY) -> game coords (x,y), где (0,0) — внутренний левый угол игрового поля (без борта)
+function screenToGame(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const sx = clientX - rect.left; // CSS px from left
+    const sy = clientY - rect.top;
+
+    // Пропорция: CSS px per game unit
+    const scaleX = rect.width / totalGameWidth;
+    const scaleY = rect.height / totalGameHeight;
+    // используем один масштаб (сохранение пропорций) — берем min, чтобы не растянуть
+    const scale = Math.min(scaleX, scaleY);
+
+    // вычисляем начало игрового поля (может быть центрированным если canvas не имеет точного соотношения)
+    // посчитаем offset чтобы центрировать таблицу в canvas (если доступны дополнительные отступы)
+    const drawTotalW = totalGameWidth * scale;
+    const drawTotalH = totalGameHeight * scale;
+    const offsetX = (rect.width - drawTotalW) / 2;
+    const offsetY = (rect.height - drawTotalH) / 2;
+
+    // gameX включает RAIL_SIZE смещение: 0..TABLE_WIDTH
+    const gameX = (sx - offsetX) / scale - RAIL_SIZE;
+    const gameY = (sy - offsetY) / scale - RAIL_SIZE;
+
+    return { x: gameX, y: gameY, scale, offsetX, offsetY };
+}
+
+// game coords -> screen (CSS px)
+function gameToScreen(gameX, gameY) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = rect.width / totalGameWidth;
+    const scaleY = rect.height / totalGameHeight;
+    const scale = Math.min(scaleX, scaleY);
+    const drawTotalW = totalGameWidth * scale;
+    const drawTotalH = totalGameHeight * scale;
+    const offsetX = (rect.width - drawTotalW) / 2;
+    const offsetY = (rect.height - drawTotalH) / 2;
+
+    const sx = offsetX + (gameX + RAIL_SIZE) * scale;
+    const sy = offsetY + (gameY + RAIL_SIZE) * scale;
+    return { x: sx, y: sy, scale };
+}
+
+// === INPUT HANDLERS ===
+function handleStart(clientX, clientY) {
+    if (!gameState || gameState.is_moving) return;
+    const pos = screenToGame(clientX, clientY);
+    const cueBall = (gameState.balls || []).find(b => b.number === 0 && !b.pocketed);
+    if (!cueBall) return;
+    const dist = Math.hypot(pos.x - cueBall.x, pos.y - cueBall.y);
+    // более удобный радиус захвата на мобильных
+    if (dist < 250) {
+        grabbed = true;
+        pullPos = { x: pos.x, y: pos.y };
+        updateAim(pos.x, pos.y, cueBall);
     }
 }
 
-// Перевод координат экрана в координаты стола
-function screenToGame(sx, sy) {
-    const rect = canvas.getBoundingClientRect();
-    
-    // Коэффициент масштаба
-    // canvas.width соответствует TABLE_WIDTH + 2*RAIL_SIZE
-    const totalGameWidth = TABLE_WIDTH + (RAIL_SIZE * 2);
-    const scale = totalGameWidth / canvas.width;
+function handleMove(clientX, clientY) {
+    const pos = screenToGame(clientX, clientY);
+    if (!gameState) return;
+    const cueBall = (gameState.balls || []).find(b => b.number === 0 && !b.pocketed);
+    if (!cueBall) return;
+    if (grabbed) {
+        updateAim(pos.x, pos.y, cueBall);
+    } else {
+        mouseAngle = Math.atan2(cueBall.y - pos.y, cueBall.x - pos.x);
+    }
+}
 
-    const relX = (sx - rect.left) * scale;
-    const relY = (sy - rect.top) * scale;
-
-    // Игровая зона начинается с отступом RAIL_SIZE
-    return {
-        x: relX - RAIL_SIZE,
-        y: relY - RAIL_SIZE
-    };
+function handleEnd() {
+    if (!grabbed) return;
+    grabbed = false;
+    if (computedPower > 0.05) {
+        shoot(mouseAngle, computedPower);
+    }
+    computedPower = 0;
 }
 
 function updateAim(inputX, inputY, cueBall) {
-    // Вектор от кия до шара
     const dx = cueBall.x - inputX;
     const dy = cueBall.y - inputY;
-    
-    mouseAngle = Math.atan2(dy, dx); // Угол удара
-    
+    mouseAngle = Math.atan2(dy, dx);
     const dist = Math.hypot(dx, dy);
-    // Сила считается честно, даже если палец ушел за экран
     computedPower = Math.min(1, dist / MAX_PULL_DIST);
 }
 
+// === СЕТЕВАЯ ОТРАБОТКА ===
 function shoot(angle, power) {
     fetch('/game/shoot', {
         method: 'POST',
@@ -169,175 +204,334 @@ function shoot(angle, power) {
 
 function updateUI(data) {
     const status = document.getElementById('status');
-    if (status) {
-        if (data.is_moving) status.textContent = '...';
-        else status.textContent = data.current_player === 1 ? "Ход Игрока 1" : "Ход Игрока 2";
-    }
+    if (!status) return;
+    if (data.is_moving) status.textContent = '...';
+    else status.textContent = (data.current_player === 1 ? "Ход Игрока 1" : "Ход Игрока 2");
 }
 
-// === ОТРИСОВКА ===
-
+// === РЕНДЕР ===
 function gameLoop() {
-    if (!ctx) return;
-    
-    // Очистка и заливка фоном (под дерево)
-    ctx.fillStyle = '#111';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (!ctx || !canvas) return;
 
+    // Получаем rect каждый кадр (на случай layout shift)
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width !== lastRect.width || rect.height !== lastRect.height) {
+        // Если CSS изменился — пересоздать физический размер холста
+        resizeCanvas();
+    }
+
+    // Чистим область в CSS px (после ctx.setTransform(dpr,0,0,dpr,0,0) используем CSS px)
+    ctx.clearRect(0, 0, rect.width, rect.height);
+
+    // Рисуем стол, шары и кий
     drawTable();
-
     if (gameState && gameState.balls) {
-        gameState.balls.forEach(drawBall);
+        for (const b of gameState.balls) drawBall(b);
     }
-    
-    if (gameState && !gameState.is_moving) {
-        drawCue();
-    }
-    
+    if (gameState && !gameState.is_moving) drawCue();
+
     requestAnimationFrame(gameLoop);
 }
 
 function drawTable() {
-    // Вычисляем масштаб отрисовки
-    // canvas.width = (TABLE_WIDTH + 2*RAIL_SIZE) * scaleFactor
-    const totalGameWidth = (TABLE_WIDTH + (RAIL_SIZE * 2));
-    const scale = canvas.width / totalGameWidth;
-    
-    // 1. Рисуем деревянный борт (весь канвас)
-    ctx.fillStyle = '#5c3a21'; // Дуб
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = rect.width / totalGameWidth;
+    const scaleY = rect.height / totalGameHeight;
+    const scale = Math.min(scaleX, scaleY);
 
-    // 2. Рисуем игровое поле (зеленое сукно)
-    const playX = RAIL_SIZE * scale;
-    const playY = RAIL_SIZE * scale;
+    const drawTotalW = totalGameWidth * scale;
+    const drawTotalH = totalGameHeight * scale;
+    const offsetX = (rect.width - drawTotalW) / 2;
+    const offsetY = (rect.height - drawTotalH) / 2;
+
+    // 1) Рисуем фон (древесная плита под столом)
+    ctx.fillStyle = '#2f1f16'; // тёмный фон под стол
+    ctx.fillRect(0, 0, rect.width, rect.height);
+
+    // 2) Рисуем "древо" (основная рамка под стол)
+    ctx.fillStyle = '#5c3a21';
+    ctx.fillRect(offsetX, offsetY, drawTotalW, drawTotalH);
+
+    // 3) play area (внутреннее зелёное поле)
+    const playX = offsetX + RAIL_SIZE * scale;
+    const playY = offsetY + RAIL_SIZE * scale;
     const playW = TABLE_WIDTH * scale;
     const playH = TABLE_HEIGHT * scale;
+    const cornerRadius = 8 * scale;
 
-    ctx.fillStyle = '#228B22';
-    ctx.fillRect(playX, playY, playW, playH);
-    
-    // Тень внутри борта для объема
-    ctx.strokeStyle = '#155015';
-    ctx.lineWidth = 5 * scale;
-    ctx.strokeRect(playX, playY, playW, playH);
-
-    // 3. Рисуем лунки (реалистично встроенные в борт)
-    // Лунки находятся по краям игрового поля (0,0, width,0 и т.д.)
+    // ---- Позиции лунок: 2 вертикальных столбца по 3 лунки ----
     const pockets = [
-        {x: 0, y: 0}, 
-        {x: TABLE_WIDTH, y: 0},
-        {x: 0, y: TABLE_HEIGHT}, 
-        {x: TABLE_WIDTH, y: TABLE_HEIGHT},
-        {x: 0, y: TABLE_HEIGHT/2}, 
-        {x: TABLE_WIDTH, y: TABLE_HEIGHT/2}
+        // левая колонка (top, middle, bottom)
+        { x: 0, y: 0 },
+        { x: 0, y: TABLE_HEIGHT / 2 },
+        { x: 0, y: TABLE_HEIGHT },
+        // правая колонка (top, middle, bottom)
+        { x: TABLE_WIDTH, y: 0 },
+        { x: TABLE_WIDTH, y: TABLE_HEIGHT / 2 },
+        { x: TABLE_WIDTH, y: TABLE_HEIGHT }
     ];
 
-    ctx.fillStyle = '#000';
-    const pocketRad = 55 * scale; // Визуальный радиус лунки
+    // Радиус лунок (игровые единицы) — синхронизируйте с сервером (60.0)
+    const pocketRadiusGame = 60.0;
+    const pocketRadiusPx = pocketRadiusGame * scale;
 
-    pockets.forEach(p => {
-        // Переводим игровые координаты в экранные (с учетом борта)
-        const sx = (p.x + RAIL_SIZE) * scale;
-        const sy = (p.y + RAIL_SIZE) * scale;
-        
-        ctx.beginPath();
-        ctx.arc(sx, sy, pocketRad, 0, Math.PI * 2);
-        ctx.fill();
-        
-        // Блик на краю лунки (пластиковая вставка)
-        ctx.strokeStyle = '#333';
-        ctx.lineWidth = 2 * scale;
-        ctx.stroke();
-    });
-}
-
-function drawBall(ball) {
-    if (ball.pocketed) return;
-    
-    const totalGameWidth = TABLE_WIDTH + (RAIL_SIZE * 2);
-    const scale = canvas.width / totalGameWidth;
-
-    // Координаты шара + смещение на борт
-    const x = (ball.x + RAIL_SIZE) * scale;
-    const y = (ball.y + RAIL_SIZE) * scale;
-    const r = ball.radius * scale;
-
+    // 4) Рисуем play area, вырезаем лунки (clip evenodd)
+    ctx.save();
     ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    
-    if (ball.number === 0) ctx.fillStyle = '#fff';
-    else if (ball.number === 8) ctx.fillStyle = '#000';
-    else if (ball.number <= 7) ctx.fillStyle = '#d63031'; // Solids
-    else ctx.fillStyle = '#f9ca24'; // Stripes
+    addRoundedRectPath(ctx, playX, playY, playW, playH, cornerRadius);
 
-    ctx.fill();
-    
-    // Полоска для полосатых
-    if (ball.number > 8) {
-        ctx.fillStyle = '#fff';
+    // Добавляем в path круги для лунок — они станут "дырками"
+    for (const p of pockets) {
+        const sx = playX + p.x * scale;
+        const sy = playY + p.y * scale;
+        ctx.moveTo(sx + pocketRadiusPx, sy);
+        ctx.arc(sx, sy, pocketRadiusPx, 0, Math.PI * 2);
+    }
+
+    // Вырезаем (evenodd)
+    ctx.clip('evenodd');
+
+    // Заливаем сукно
+    ctx.fillStyle = '#0f8b1f'; // мягкий зелёный (можете поменять)
+    ctx.fillRect(playX, playY, playW, playH);
+    ctx.restore();
+
+    // 5) Рисуем тонкую окантовку поля
+    ctx.strokeStyle = '#133c12';
+    ctx.lineWidth = Math.max(2, 4 * scale);
+    ctx.strokeRect(playX, playY, playW, playH);
+
+    // 6) Рисуем горловины лунок (чёрные внутренности) — чуть больше, чем вырез
+    pockets.forEach(p => {
+        const sx = playX + p.x * scale;
+        const sy = playY + p.y * scale;
+
+        // тёмная горловина
         ctx.beginPath();
-        ctx.arc(x, y, r * 0.6, 0, Math.PI * 2);
+        ctx.fillStyle = '#000';
+        ctx.arc(sx, sy, pocketRadiusPx * 1.08, 0, Math.PI * 2);
+        ctx.fill();
+
+        // пластиковая вставка/ободок (светлый тон у края)
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgba(220,220,220,0.08)';
+        ctx.lineWidth = Math.max(1, 2 * scale);
+        ctx.arc(sx, sy, pocketRadiusPx * 0.78, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // внутренняя тень (для глубины)
+        ctx.beginPath();
+        ctx.fillStyle = 'rgba(0,0,0,0.18)';
+        ctx.arc(sx + pocketRadiusPx * 0.035, sy + pocketRadiusPx * 0.035, pocketRadiusPx * 0.92, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    // 7) Накладываем рейки (rail) поверх — это делает лунки "встроенными"
+    ctx.fillStyle = '#4a2511';
+    // верхняя рейка
+    ctx.fillRect(offsetX, offsetY, drawTotalW, RAIL_SIZE * scale);
+    // нижняя рейка
+    ctx.fillRect(offsetX, offsetY + drawTotalH - RAIL_SIZE * scale, drawTotalW, RAIL_SIZE * scale);
+    // левая рейка
+    ctx.fillRect(offsetX, offsetY, RAIL_SIZE * scale, drawTotalH);
+    // правая рейка
+    ctx.fillRect(offsetX + drawTotalW - RAIL_SIZE * scale, offsetY, RAIL_SIZE * scale, drawTotalH);
+
+    // 8) Декоративные винтики / блики на рейке (необязательно)
+    const screwRad = 3 * scale;
+    ctx.fillStyle = '#cfcfcf';
+    for (let i = 0; i < 6; i++) {
+        // по верхней рейке
+        const sx = offsetX + (drawTotalW * (i + 1) / 7);
+        const sy = offsetY + (RAIL_SIZE * scale) / 2;
+        ctx.beginPath();
+        ctx.arc(sx, sy, screwRad, 0, Math.PI * 2);
         ctx.fill();
     }
 }
 
+// Вспомогательная: создать путь закруглённого прямоугольника (не закрываем path, чтобы arcs добавлялись как субпути)
+function addRoundedRectPath(ctx, x, y, w, h, r) {
+    const radius = Math.max(0, r);
+    ctx.moveTo(x + radius, y);
+    ctx.arcTo(x + w, y, x + w, y + h, radius);
+    ctx.arcTo(x + w, y + h, x, y + h, radius);
+    ctx.arcTo(x, y + h, x, y, radius);
+    ctx.arcTo(x, y, x + w, y, radius);
+    // не делаем closePath, чтобы кружки-лузы были отдельными под-путями
+}
+
+
+// Вспомогательная функция: добавить путь закругленного rect (без fill)
+function addRoundedRectPath(ctx, x, y, w, h, r) {
+    const radius = Math.max(0, r);
+    ctx.moveTo(x + radius, y);
+    ctx.arcTo(x + w, y, x + w, y + h, radius);
+    ctx.arcTo(x + w, y + h, x, y + h, radius);
+    ctx.arcTo(x, y + h, x, y, radius);
+    ctx.arcTo(x, y, x + w, y, radius);
+    // path is left open (do not closePath) so that arcs added later are separate subpaths
+}
+
+// utility: rounded rect
+function roundRect(ctx, x, y, w, h, r, fill, stroke) {
+    if (typeof r === 'undefined') r = 5;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+    if (fill) ctx.fill();
+    if (stroke) ctx.stroke();
+}
+
+function drawBall(ball) {
+    if (ball.pocketed) return;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = rect.width / totalGameWidth;
+    const scaleY = rect.height / totalGameHeight;
+    const scale = Math.min(scaleX, scaleY);
+    const drawTotalW = totalGameWidth * scale;
+    const offsetX = (rect.width - drawTotalW) / 2;
+    const offsetY = (rect.height - (totalGameHeight * scale)) / 2;
+
+    const x = offsetX + (ball.x + RAIL_SIZE) * scale;
+    const y = offsetY + (ball.y + RAIL_SIZE) * scale;
+    const r = Math.max(2, ball.radius * scale);
+
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    if (ball.number === 0) ctx.fillStyle = '#fff';
+    else if (ball.number === 8) ctx.fillStyle = '#000';
+    else if (ball.number <= 7) ctx.fillStyle = '#d63031';
+    else ctx.fillStyle = '#f9ca24';
+    ctx.fill();
+
+    // border
+    ctx.lineWidth = Math.max(1, 2 * (scale));
+    ctx.strokeStyle = '#333';
+    ctx.stroke();
+
+    // number
+    if (ball.number > 0) {
+        ctx.fillStyle = (ball.number === 8 ? '#fff' : '#000');
+        ctx.font = `${Math.max(8, r)}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(ball.number.toString(), x, y);
+    }
+}
+
 function drawCue() {
+    if (!gameState || !gameState.balls) return;
     const cueBall = gameState.balls.find(b => b.number === 0 && !b.pocketed);
     if (!cueBall) return;
 
-    const totalGameWidth = TABLE_WIDTH + (RAIL_SIZE * 2);
-    const scale = canvas.width / totalGameWidth;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = rect.width / totalGameWidth;
+    const scaleY = rect.height / totalGameHeight;
+    const scale = Math.min(scaleX, scaleY);
+    const drawTotalW = totalGameWidth * scale;
+    const offsetX = (rect.width - drawTotalW) / 2;
+    const offsetY = (rect.height - (totalGameHeight * scale)) / 2;
 
-    const x = (cueBall.x + RAIL_SIZE) * scale;
-    const y = (cueBall.y + RAIL_SIZE) * scale;
+    const x = offsetX + (cueBall.x + RAIL_SIZE) * scale;
+    const y = offsetY + (cueBall.y + RAIL_SIZE) * scale;
 
-    // Кий рисуется сзади шара, поэтому угол + 180 (PI)
-    const angleOpposite = mouseAngle + Math.PI; 
+    const angleOpposite = mouseAngle + Math.PI;
 
-    // Визуальная логика: 
-    // Длина кия зависит от силы натяжения (computedPower), но не больше VISUAL_CUE_MAX_LEN
-    // Это решает проблему "кия на полкомнаты"
+    let cueLenGame;
+    let drawPower;
     
-    let drawPower = grabbed ? computedPower : 0;
-    const baseLen = 300 * scale;
-    const addedLen = (drawPower * 400) * scale; // Анимация оттягивания
+    if (grabbed) {
+        // При прицеливании: кий меняет длину от минимальной до максимальной
+        drawPower = computedPower;
+        cueLenGame = VISUAL_CUE_MIN_LEN + drawPower * (VISUAL_CUE_MAX_LEN - VISUAL_CUE_MIN_LEN);
+    } else {
+        // В дефолтном состоянии: кий средней длины
+        drawPower = 0; // сила 0, но кий виден
+        cueLenGame = VISUAL_CUE_MAX_LEN / 2; // Средняя длина - половина от максимальной
+    }
     
-    // Ограничиваем визуальную длину
-    const maxLenPixels = VISUAL_CUE_MAX_LEN * scale;
-    const totalLen = Math.min(baseLen + addedLen, maxLenPixels);
+    const cueLenPx = cueLenGame * scale;
 
-    // Отступ от шара
-    const offset = 30 * scale;
+    const offset = 20 * scale; // Отступ от шара
     const startX = x + Math.cos(angleOpposite) * offset;
     const startY = y + Math.sin(angleOpposite) * offset;
-    
-    const endX = startX + Math.cos(angleOpposite) * totalLen;
-    const endY = startY + Math.sin(angleOpposite) * totalLen;
+    const endX = startX + Math.cos(angleOpposite) * cueLenPx;
+    const endY = startY + Math.sin(angleOpposite) * cueLenPx;
 
-    // Палка
+    // Толщина кия тоже может меняться с силой
+    const cueWidth = Math.max(2, (3 + drawPower * 5) * scale);
+
+    // Кий
     ctx.strokeStyle = '#8B4513';
-    ctx.lineWidth = 8 * scale;
+    ctx.lineWidth = cueWidth;
     ctx.lineCap = 'round';
     ctx.beginPath();
     ctx.moveTo(startX, startY);
     ctx.lineTo(endX, endY);
     ctx.stroke();
-    
-    // Линия прицеливания (пунктир)
+
+    // Наконечник
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(startX, startY, Math.max(2, 4 * scale), 0, Math.PI * 2);
+    ctx.fill();
+
+    // Линия прицеливания (только когда тянем)
     if (grabbed) {
-        ctx.setLineDash([5, 10]);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-        ctx.lineWidth = 2;
+        ctx.save();
+        ctx.setLineDash([6 * scale, 8 * scale]);
+        ctx.strokeStyle = `rgba(255, 255, 255, ${0.3 + drawPower * 0.5})`;
+        ctx.lineWidth = Math.max(1, 2 * scale);
         ctx.beginPath();
         ctx.moveTo(x, y);
-        // Рисуем линию вперед
-        ctx.lineTo(x + Math.cos(mouseAngle) * 1500 * scale, y + Math.sin(mouseAngle) * 1500 * scale);
+        
+        // Длина линии прицеливания тоже зависит от силы
+        const aimLength = 1000 + drawPower * 500;
+        ctx.lineTo(
+            x + Math.cos(mouseAngle) * aimLength * scale, 
+            y + Math.sin(mouseAngle) * aimLength * scale
+        );
         ctx.stroke();
-        ctx.setLineDash([]);
+        ctx.restore();
+        
+        // Индикатор силы (опционально)
+        if (drawPower > 0.05) {
+            const barWidth = 80;
+            const barHeight = 8;
+            const barX = rect.width - barWidth - 20;
+            const barY = 20;
+            
+            // Фон
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+            ctx.fillRect(barX, barY, barWidth, barHeight);
+            
+            // Градиент заполнения
+            const gradient = ctx.createLinearGradient(barX, barY, barX + barWidth, barY);
+            gradient.addColorStop(0, '#0f0');
+            gradient.addColorStop(0.5, '#ff0');
+            gradient.addColorStop(1, '#f00');
+            
+            ctx.fillStyle = gradient;
+            ctx.fillRect(barX, barY, barWidth * drawPower, barHeight);
+            
+            // Обводка
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(barX, barY, barWidth, barHeight);
+            
+            // Текст
+            ctx.fillStyle = '#fff';
+            ctx.font = `${Math.max(10, 12 * scale)}px Arial`;
+            ctx.textAlign = 'left';
+            ctx.fillText(`Сила: ${Math.round(drawPower * 100)}%`, barX, barY + barHeight + 15);
+        }
     }
 }
 
-// Expose initializer to global so template inline scripts can call it
-if (typeof window !== 'undefined') {
-    window.initGame = initGame;
-}
+// Expose initializer
+if (typeof window !== 'undefined') window.initGame = initGame;

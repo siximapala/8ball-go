@@ -511,5 +511,5 @@ form {
     .game-layout { padding: 0; }
     .gutter { display: none; }
     .table-area { padding: 8px; }
-    #billiardsTable { max-width: none; width: 75vw; height: calc((100vh - 40px)/4*3); border-radius: 0; border-width: 6px; }
+    #billiardsTable { max-width: none; width: 65vw; height: 70vh; border-radius: 0; border-width: 6px; }
 }

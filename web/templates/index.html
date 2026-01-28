@@ -8,7 +8,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>🎱 8-Ball Billiards</h1>
+        <h1 id="gameTitle" class="{{if .gameID}}hidden{{end}}">🎱 Magic 8 Ball</h1>
         <div id="menu" class="menu">
             <div class="menu-section">
                 <h2>Start New Game</h2>
@@ -63,6 +63,8 @@
                 document.getElementById('menu').style.display = 'none';
                 document.getElementById('gameContainer').style.display = 'flex';
                 document.getElementById('displayGameId').textContent = gameId;
+                const title = document.getElementById('gameTitle');
+                if (title) title.style.display = 'none';
                 initGame(gameId, playerName);
             });
         });
@@ -80,6 +82,8 @@
                 document.getElementById('menu').style.display = 'flex';
                 document.getElementById('gameContainer').style.display = 'flex';
                 document.getElementById('displayGameId').textContent = gameId;
+                const title = document.getElementById('gameTitle');
+                if (title) title.style.display = 'none';
                 initGame(gameId, playerName);
             });
         });
