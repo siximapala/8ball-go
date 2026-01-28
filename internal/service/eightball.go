@@ -228,7 +228,6 @@ func (s *GameService) UpdateGameState(gameID string) {
 }
 
 func (s *GameService) ShootCue(gameID string, angle, power float64) {
-	// ЛОГИКА БЕЗ ИЗМЕНЕНИЙ, только сигнатура подправлена под JSON input
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -249,6 +248,8 @@ func (s *GameService) ShootCue(gameID string, angle, power float64) {
 	}
 	game.IsMoving = true
 	game.LastUpdateTime = time.Now() // Важно обновить время
+
+	game.CurrentPlayer = 3 - game.CurrentPlayer // Смена игрока
 }
 
 // ... Остальные методы (SetCueAngle и т.д.) ...

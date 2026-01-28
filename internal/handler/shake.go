@@ -124,17 +124,44 @@ func (h *ShakeHandler) SetCueAngle(w http.ResponseWriter, r *http.Request) {
 
 func (h *ShakeHandler) Shoot(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		GameID string  `json:"game_id"`
-		Angle  float64 `json:"angle"`
-		Power  float64 `json:"power"`
+		GameID     string  `json:"game_id"`
+		Angle      float64 `json:"angle"`
+		Power      float64 `json:"power"`
+		PlayerName string  `json:"player_name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
 
-	// update cue angle in game state and perform shot with given angle and power
-	h.gameService.SetCueAngle(req.GameID, req.Angle)
+	// server-side authorization: disallow shooting until both players joined
+	game := h.gameService.GetGame(req.GameID)
+	if game == nil {
+		http.Error(w, "game not found", http.StatusNotFound)
+		return
+	}
+
+	// if second player not joined yet, forbid shooting
+	if game.Player1 == "" || game.Player2 == "" {
+		http.Error(w, "waiting for second player", http.StatusForbidden)
+		return
+	}
+
+	// allow shot only if requester is the current player
+	allowed := false
+	if req.PlayerName != "" {
+		if game.CurrentPlayer == 1 && req.PlayerName == game.Player1 {
+			allowed = true
+		}
+		if game.CurrentPlayer == 2 && req.PlayerName == game.Player2 {
+			allowed = true
+		}
+	}
+
+	if !allowed {
+		http.Error(w, "not allowed to shoot", http.StatusForbidden)
+		return
+	}
 	h.gameService.ShootCue(req.GameID, req.Angle, req.Power)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -145,7 +172,19 @@ func (h *ShakeHandler) GetGame(w http.ResponseWriter, r *http.Request) {
 	gameID := r.URL.Query().Get("game_id")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	game := h.gameService.GetGame(gameID)
-	h.templates.ExecuteTemplate(w, "game.html", game)
+	if game == nil {
+		http.Error(w, "game not found", http.StatusNotFound)
+		return
+	}
+
+	// Execute template with a map so keys match what templates expect (lower-case keys)
+	h.templates.ExecuteTemplate(w, "game.html", map[string]interface{}{
+		"gameID":     gameID,
+		"playerName": "",
+		"playerRole": "",
+		"player1":    game.Player1,
+		"player2":    game.Player2,
+	})
 }
 
 // StreamGame streams game state as Server-Sent Events (SSE).

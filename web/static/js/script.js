@@ -6,6 +6,10 @@ let mouseAngle = -Math.PI / 2; // По умолчанию кий смотрит 
 let grabbed = false;
 let pullPos = { x: 0, y: 0 };
 let computedPower = 0;
+// Local client identity + turn
+let localPlayerName = '';
+let localPlayerRole = 0; // 0 = spectator/unknown, 1 or 2
+let myTurn = false;
 
 // === КОНСТАНТЫ РАЗМЕРОВ (Вертикальная ориентация) ===
 // Эти координаты соответствуют физике на сервере
@@ -36,6 +40,7 @@ function debounce(fn, ms = 100) {
 
 function initGame(id, playerName) {
     gameId = id;
+    localPlayerName = playerName || '';
     canvas = document.getElementById('billiardsTable');
     if (!canvas) throw new Error('Canvas #billiardsTable not found');
     ctx = canvas.getContext('2d');
@@ -48,7 +53,7 @@ function initGame(id, playerName) {
     // Start animation loop
     requestAnimationFrame(gameLoop);
 
-    // Hide legacy controls (optional)
+    // Hide legacy controls
     const controls = document.getElementById('controls');
     if (controls) controls.style.display = 'none';
 
@@ -58,9 +63,22 @@ function initGame(id, playerName) {
         try {
             const data = JSON.parse(e.data);
             gameState = data;
+
+            // determine local player's role based on names from server
+            if (localPlayerName) {
+                if (localPlayerName === data.player1) localPlayerRole = 1;
+                else if (localPlayerName === data.player2) localPlayerRole = 2;
+                else localPlayerRole = 0;
+            }
+
+            // only allow turns when both players are present
+            const bothPresent = !!(data.player1 && data.player2);
+            myTurn = (localPlayerRole !== 0) && (data.current_player === localPlayerRole) && bothPresent;
+
             updateUI(data);
         } catch (err) {
-            console.error('SSE parse error', err);
+            // ignore keepalive or malformed events
+            // console.error('SSE parse error', err);
         }
     };
     es.onerror = (err) => console.error('EventSource error', err);
@@ -85,7 +103,7 @@ function initGame(id, playerName) {
     document.addEventListener('touchend', handleEnd);
 }
 
-// === RESIZE: стабильно настраиваем canvas под CSS-ширину и DPR ===
+// === RESIZE: настраиваем canvas под CSS-ширину и DPR ===
 function resizeCanvas() {
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
@@ -151,7 +169,9 @@ function gameToScreen(gameX, gameY) {
 
 // === INPUT HANDLERS ===
 function handleStart(clientX, clientY) {
+    // prohibit interacting when table is moving or it's not your turn
     if (!gameState || gameState.is_moving) return;
+    if (!myTurn) return;
     const pos = screenToGame(clientX, clientY);
     const cueBall = (gameState.balls || []).find(b => b.number === 0 && !b.pocketed);
     if (!cueBall) return;
@@ -165,6 +185,7 @@ function handleStart(clientX, clientY) {
 }
 
 function handleMove(clientX, clientY) {
+    if (!myTurn) return;
     const pos = screenToGame(clientX, clientY);
     if (!gameState) return;
     const cueBall = (gameState.balls || []).find(b => b.number === 0 && !b.pocketed);
@@ -198,7 +219,7 @@ function shoot(angle, power) {
     fetch('/game/shoot', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ game_id: gameId, angle: angle, power: power })
+        body: JSON.stringify({ game_id: gameId, angle: angle, power: power, player_name: localPlayerName })
     }).catch(console.error);
 }
 
@@ -304,6 +325,19 @@ function drawTable() {
     ctx.fillStyle = '#0f8b1f'; // мягкий зелёный (можете поменять)
     ctx.fillRect(playX, playY, playW, playH);
     ctx.restore();
+
+    // If second player hasn't joined yet, show waiting text centered on the play area
+    if (gameState && (!gameState.player2 || gameState.player2 === '')) {
+        ctx.save();
+        const textColor = '#0b6f18'; // чуть темнее цвета сукна
+        ctx.fillStyle = textColor;
+        const fontSize = Math.max(16, 36 * Math.min(scale, 1));
+        ctx.font = `bold ${fontSize}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Ожидание второго игрока', playX + playW / 2, playY + playH / 2);
+        ctx.restore();
+    }
 
     // 5) Рисуем тонкую окантовку поля
     ctx.strokeStyle = '#133c12';
