@@ -452,7 +452,7 @@ function drawCue() {
     } else {
         // В дефолтном состоянии: кий средней длины
         drawPower = 0; // сила 0, но кий виден
-        cueLenGame = VISUAL_CUE_MAX_LEN / 2; // Средняя длина - половина от максимальной
+        cueLenGame = VISUAL_CUE_DEFAULT_LEN
     }
     
     const cueLenPx = cueLenGame * scale;
