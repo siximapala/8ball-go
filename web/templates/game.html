@@ -9,8 +9,9 @@
         <div class="game-header">
             <div class="game-code">Game: <span id="displayGameId">{{.gameID}}</span></div>
             <div class="players-header">
-                <span id="player1Info" class="player-info-name">{{.player1}}</span>
-                <span id="player2Info" class="player-info-name">{{.player2}}</span>
+                <!-- Исправьте эти строки: -->
+                <span id="headerPlayer1" class="player-info-name">{{.player1}}</span>
+                <span id="headerPlayer2" class="player-info-name">{{.player2}}</span>
             </div>
         </div>
 
@@ -21,14 +22,20 @@
 
     <aside class="gutter right-gutter">
         <div class="players-list">
-            <div id="player1" class="player"><span class="turn-indicator" aria-hidden="true"></span>{{.player1}}</div>
-            <div id="player2" class="player"><span class="turn-indicator" aria-hidden="true"></span>{{.player2}}</div>
+            <!-- Исправьте эти строки: -->
+            <div id="gutterPlayer1" class="player">
+                <span class="turn-indicator" aria-hidden="true"></span>
+                <span class="player-name">{{.player1}}</span>
+            </div>
+            <div id="gutterPlayer2" class="player">
+                <span class="turn-indicator" aria-hidden="true"></span>
+                <span class="player-name">{{.player2}}</span>
+            </div>
         </div>
     </aside>
 
     <script type="module" src="/static/js/script.js"></script>
     <script>
-        // Ensure module attached initGame to window, then call it
         (function waitInit() {
             if (window.initGame) {
                 window.initGame('{{.gameID}}','{{.playerName}}');

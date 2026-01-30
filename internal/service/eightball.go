@@ -49,6 +49,7 @@ type GameState struct {
 	Player2Score   int
 	GameOver       bool
 	Winner         int
+	BallInHand     bool
 }
 
 type GameService struct {
@@ -114,9 +115,6 @@ func (s *GameService) GetPlayers(gameID string) (string, string) {
 	}
 	return "", ""
 }
-
-// ... CreateGame, GetGame, JoinGame, GetPlayers остаются БЕЗ ИЗМЕНЕНИЙ ...
-// Вставь их сюда из своего старого файла
 func (s *GameService) CreateGame(gameID string) *GameState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -265,7 +263,6 @@ func (game *GameState) checkPocketing(ball *Ball) {
 		{TableWidth, TableHeight / 2}, // Mid-Right
 	}
 
-	// Увеличил чувствительность, чтобы шар падал, если центр близок к лузе
 	pocketRadius := 60.0
 
 	for _, pocket := range pockets {
@@ -274,6 +271,23 @@ func (game *GameState) checkPocketing(ball *Ball) {
 		distance := math.Sqrt(dx*dx + dy*dy)
 
 		if distance < pocketRadius {
+			// Если это белый шар -фол: помечаем как pocketed и ставим флаг BallInHand.
+			if ball.Number == 0 {
+				ball.Pocketed = true
+				ball.X = pocket.x
+				ball.Y = pocket.y
+				ball.VelX = 0
+				ball.VelY = 0
+				ball.Omega = 0
+
+				// Включаем ball-in-hand. Текущий игрок на сервере
+				// уже сменился в ShootCue (ваша прежняя логика), поэтому
+				// тот, кто ходит -сможет поставить шар.
+				game.BallInHand = true
+				return
+			}
+
+			// Обычный шар -падает в лузу
 			ball.Pocketed = true
 			ball.X = pocket.x
 			ball.Y = pocket.y
@@ -372,5 +386,3 @@ func initializeBalls() []*Ball {
 
 	return balls
 }
-
-// GetPlayers и другие вспомогательные методы тоже копируй как было

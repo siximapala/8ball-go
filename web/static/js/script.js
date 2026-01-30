@@ -28,6 +28,7 @@ let dpr = 1;                       // devicePixelRatio
 let lastRect = { width: 0, height: 0 };
 let totalGameWidth = TABLE_WIDTH + RAIL_SIZE * 2;
 let totalGameHeight = TABLE_HEIGHT + RAIL_SIZE * 2;
+let ballInHand = false; // Добавлена переменная для отслеживания режима ball-in-hand
 
 // Debounce helper
 function debounce(fn, ms = 100) {
@@ -63,6 +64,9 @@ function initGame(id, playerName) {
         try {
             const data = JSON.parse(e.data);
             gameState = data;
+            
+            // Установка состояния ballInHand из данных SSE
+            ballInHand = !!data.ball_in_hand;
 
             // determine local player's role based on names from server
             if (localPlayerName) {
@@ -117,7 +121,7 @@ function resizeCanvas() {
     canvas.height = Math.round(rect.height * dpr);
 
     // ВАЖНО: матрица так, чтобы далее рисовать в CSS px
-    // Если использовать setTransform, координаты далее — CSS px.
+    // Если использовать setTransform, координаты далее - CSS px.
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     lastRect.width = rect.width;
@@ -125,7 +129,7 @@ function resizeCanvas() {
 }
 
 // === ПРЕОБРАЗОВАНИЯ КООРДИНАТ ===
-// screen coords (clientX, clientY) -> game coords (x,y), где (0,0) — внутренний левый угол игрового поля (без борта)
+// screen coords (clientX, clientY) -> game coords (x,y), где (0,0) - внутренний левый угол игрового поля (без борта)
 function screenToGame(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
     const sx = clientX - rect.left; // CSS px from left
@@ -134,7 +138,7 @@ function screenToGame(clientX, clientY) {
     // Пропорция: CSS px per game unit
     const scaleX = rect.width / totalGameWidth;
     const scaleY = rect.height / totalGameHeight;
-    // используем один масштаб (сохранение пропорций) — берем min, чтобы не растянуть
+    // используем один масштаб (сохранение пропорций) - берем min, чтобы не растянуть
     const scale = Math.min(scaleX, scaleY);
 
     // вычисляем начало игрового поля (может быть центрированным если canvas не имеет точного соотношения)
@@ -169,10 +173,19 @@ function gameToScreen(gameX, gameY) {
 
 // === INPUT HANDLERS ===
 function handleStart(clientX, clientY) {
-    // prohibit interacting when table is moving or it's not your turn
-    if (!gameState || gameState.is_moving) return;
-    if (!myTurn) return;
+    if (!gameState) return;
     const pos = screenToGame(clientX, clientY);
+    
+    // Если разрешено поставить биток — один клик ставит его
+    if (ballInHand && myTurn) {
+        placeCueAt(pos.x, pos.y);
+        return;
+    }
+    
+    // prohibit interacting when table is moving or it's not your turn
+    if (gameState.is_moving) return;
+    if (!myTurn) return;
+    
     const cueBall = (gameState.balls || []).find(b => b.number === 0 && !b.pocketed);
     if (!cueBall) return;
     const dist = Math.hypot(pos.x - cueBall.x, pos.y - cueBall.y);
@@ -223,30 +236,76 @@ function shoot(angle, power) {
     }).catch(console.error);
 }
 
-function updateUI(data) {
-    // Replace textual status with compact turn indicators next to player names.
-    const status = document.getElementById('status');
-    if (status) status.style.display = 'none';
-
-    // Header player name indicators
-    const p1Header = document.getElementById('player1Info');
-    const p2Header = document.getElementById('player2Info');
-    if (p1Header) { if (data.current_player === 1) p1Header.classList.add('active'); else p1Header.classList.remove('active'); }
-    if (p2Header) { if (data.current_player === 2) p2Header.classList.add('active'); else p2Header.classList.remove('active'); }
-
-    // Sidebar / gutter indicators (if present)
-    const gut1 = document.getElementById('player1');
-    const gut2 = document.getElementById('player2');
-    if (gut1) {
-        const ind = gut1.querySelector('.turn-indicator');
-        if (ind) ind.classList.toggle('active', data.current_player === 1);
-    }
-    if (gut2) {
-        const ind = gut2.querySelector('.turn-indicator');
-        if (ind) ind.classList.toggle('active', data.current_player === 2);
-    }
+function placeCueAt(gameX, gameY) {
+    fetch('/game/place', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ 
+            game_id: gameId, 
+            x: gameX, 
+            y: gameY, 
+            player_name: localPlayerName 
+        })
+    }).then(res => {
+        if (!res.ok) {
+            res.text().then(t => console.warn('place failed:', t));
+        } else {
+            // успех — дождёмся следующего SSE-обновления, чтобы состояние подтянулось
+        }
+    }).catch(console.error);
 }
 
+function updateUI(data) {
+    // Обновляем имена игроков в header
+    const headerP1 = document.getElementById('headerPlayer1');
+    const headerP2 = document.getElementById('headerPlayer2');
+    
+    if (headerP1 && data.player1) {
+        headerP1.textContent = data.player1;
+        headerP1.classList.toggle('active', data.current_player === 1);
+    }
+    
+    if (headerP2 && data.player2) {
+        headerP2.textContent = data.player2;
+        headerP2.classList.toggle('active', data.current_player === 2);
+    }
+    
+    // Обновляем имена игроков в правом gutter
+    const gutterP1 = document.getElementById('gutterPlayer1');
+    const gutterP2 = document.getElementById('gutterPlayer2');
+    
+    if (gutterP1 && data.player1) {
+        const nameSpan = gutterP1.querySelector('.player-name');
+        const indicator = gutterP1.querySelector('.turn-indicator');
+        
+        if (nameSpan) nameSpan.textContent = data.player1;
+        if (indicator) indicator.classList.toggle('active', data.current_player === 1);
+    }
+    
+    if (gutterP2 && data.player2) {
+        const nameSpan = gutterP2.querySelector('.player-name');
+        const indicator = gutterP2.querySelector('.turn-indicator');
+        
+        if (nameSpan) nameSpan.textContent = data.player2;
+        if (indicator) indicator.classList.toggle('active', data.current_player === 2);
+    }
+    
+    // Также обновляем старые элементы (для совместимости с index.html)
+    const legacyP1 = document.getElementById('player1Info');
+    const legacyP2 = document.getElementById('player2Info');
+    
+    if (legacyP1 && data.player1) {
+        const prefix = legacyP1.getAttribute('data-prefix') || '';
+        legacyP1.textContent = prefix + data.player1;
+        legacyP1.classList.toggle('active', data.current_player === 1);
+    }
+    
+    if (legacyP2 && data.player2) {
+        const prefix = legacyP2.getAttribute('data-prefix') || '';
+        legacyP2.textContent = prefix + data.player2;
+        legacyP2.classList.toggle('active', data.current_player === 2);
+    }
+}
 // === РЕНДЕР ===
 function gameLoop() {
     if (!ctx || !canvas) return;
@@ -254,7 +313,7 @@ function gameLoop() {
     // Получаем rect каждый кадр (на случай layout shift)
     const rect = canvas.getBoundingClientRect();
     if (rect.width !== lastRect.width || rect.height !== lastRect.height) {
-        // Если CSS изменился — пересоздать физический размер холста
+        // Если CSS изменился - пересоздать физический размер холста
         resizeCanvas();
     }
 
@@ -301,7 +360,7 @@ function drawTable() {
         { x: TABLE_WIDTH, y: TABLE_HEIGHT }
     ];
 
-    // Радиус лунок (игровые единицы) — синхронизируйте с сервером (60.0)
+    // Радиус лунок (игровые единицы) - синхронизируйте с сервером (60.0)
     const pocketRadiusGame = 60.0;
     const pocketRadiusPx = pocketRadiusGame * scale;
 
@@ -310,7 +369,7 @@ function drawTable() {
     ctx.beginPath();
     addRoundedRectPath(ctx, playX, playY, playW, playH, cornerRadius);
 
-    // Добавляем в path круги для лунок — они станут "дырками"
+    // Добавляем в path круги для лунок - они станут "дырками"
     for (const p of pockets) {
         const sx = playX + p.x * scale;
         const sy = playY + p.y * scale;
@@ -325,6 +384,16 @@ function drawTable() {
     ctx.fillStyle = '#0f8b1f'; // мягкий зелёный (можете поменять)
     ctx.fillRect(playX, playY, playW, playH);
     ctx.restore();
+
+    // Если разрешена постановка — показать подсказку
+    if (ballInHand && myTurn) {
+        ctx.save();
+        ctx.font = `${Math.max(12, 18 * Math.min(scale,1))}px sans-serif`;
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.textAlign = 'center';
+        ctx.fillText('Нажмите по столу, чтобы поставить биток', playX + playW/2, playY + 30);
+        ctx.restore();
+    }
 
     // If second player hasn't joined yet, show waiting text centered on the play area
     if (gameState && (!gameState.player2 || gameState.player2 === '')) {
@@ -344,7 +413,7 @@ function drawTable() {
     ctx.lineWidth = Math.max(2, 4 * scale);
     ctx.strokeRect(playX, playY, playW, playH);
 
-    // 6) Рисуем горловины лунок (чёрные внутренности) — чуть больше, чем вырез
+    // 6) Рисуем горловины лунок (чёрные внутренности) - чуть больше, чем вырез
     pockets.forEach(p => {
         const sx = playX + p.x * scale;
         const sy = playY + p.y * scale;
@@ -369,7 +438,7 @@ function drawTable() {
         ctx.fill();
     });
 
-    // 7) Накладываем рейки (rail) поверх — это делает лунки "встроенными"
+    // 7) Накладываем рейки (rail) поверх - это делает лунки "встроенными"
     ctx.fillStyle = '#4a2511';
     // верхняя рейка
     ctx.fillRect(offsetX, offsetY, drawTotalW, RAIL_SIZE * scale);
@@ -469,6 +538,10 @@ function drawBall(ball) {
 
 function drawCue() {
     if (!gameState || !gameState.balls) return;
+    
+    // Не показывать кий в режиме ball-in-hand
+    if (ballInHand && myTurn) return;
+    
     const cueBall = gameState.balls.find(b => b.number === 0 && !b.pocketed);
     if (!cueBall) return;
 
