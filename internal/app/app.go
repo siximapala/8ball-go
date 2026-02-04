@@ -22,20 +22,20 @@ func New() (*App, error) {
 
 	r := chi.NewRouter()
 
-	// Apply global middleware
+	// глобальный мидлварь
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recover)
 
-	// Initialize service (in-memory sessions)
+	// запускаем сервисы
 	gameService := service.NewGameService()
 
-	// Handlers
+	// хендлеры приложения
 	shakeHandler, err := handler.NewShakeHandler(gameService)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create shake handler: %w", err)
 	}
 
-	// Routes
+	// роуты
 	r.Get("/", shakeHandler.GetHome)
 	r.Post("/join", shakeHandler.JoinGame)
 	r.Get("/game/state", shakeHandler.GetGameState)
@@ -43,7 +43,7 @@ func New() (*App, error) {
 	r.Get("/ws", shakeHandler.GetGame)
 	r.Get("/events", shakeHandler.StreamGame)
 
-	// Static files
+	// подключаем статику
 	fs := http.FileServer(http.Dir("web/static"))
 	r.Handle("/static/*", http.StripPrefix("/static", fs))
 

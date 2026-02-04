@@ -6,13 +6,11 @@ let mouseAngle = -Math.PI / 2; // По умолчанию кий смотрит 
 let grabbed = false;
 let pullPos = { x: 0, y: 0 };
 let computedPower = 0;
-// Local client identity + turn
 let localPlayerName = '';
-let localPlayerRole = 0; // 0 = spectator/unknown, 1 or 2
+let localPlayerRole = 0; // 0 = spectator, 1 или 2
 let myTurn = false;
 
-// === КОНСТАНТЫ РАЗМЕРОВ (Вертикальная ориентация) ===
-// Эти координаты соответствуют физике на сервере
+// константы размера стола соответствуют физике на сервере
 const TABLE_WIDTH = 1400;
 const TABLE_HEIGHT = 2800;
 
@@ -23,14 +21,13 @@ const VISUAL_CUE_MAX_LEN = 800; // В игровых единицах (макс 
 const VISUAL_CUE_DEFAULT_LEN = 300;
 const VISUAL_CUE_MIN_LEN = 30; // В игровых единицах (минимальная длина кия)
 
-// --- Вспомогательные состояния для рендера ---
 let dpr = 1;                       // devicePixelRatio
 let lastRect = { width: 0, height: 0 };
 let totalGameWidth = TABLE_WIDTH + RAIL_SIZE * 2;
 let totalGameHeight = TABLE_HEIGHT + RAIL_SIZE * 2;
-let ballInHand = false; // Добавлена переменная для отслеживания режима ball-in-hand
+let ballInHand = false; // переменная для отслеживания режима состояния выставления битка на стол
 
-// Debounce helper
+// нужна для оптимизации ресайза
 function debounce(fn, ms = 100) {
     let t;
     return (...args) => {
@@ -46,15 +43,14 @@ function initGame(id, playerName) {
     if (!canvas) throw new Error('Canvas #billiardsTable not found');
     ctx = canvas.getContext('2d');
 
-    // Setup DPR-aware canvas size
+    //  Ставим начальный размер и навешиваем обработчики ресайза
     resizeCanvas();
     window.addEventListener('resize', debounce(resizeCanvas, 120));
     window.addEventListener('orientationchange', debounce(resizeCanvas, 200));
 
-    // Start animation loop
+    // Начинаем анимацию рендера
     requestAnimationFrame(gameLoop);
 
-    // Hide legacy controls
     const controls = document.getElementById('controls');
     if (controls) controls.style.display = 'none';
 
@@ -65,29 +61,27 @@ function initGame(id, playerName) {
             const data = JSON.parse(e.data);
             gameState = data;
             
-            // Установка состояния ballInHand из данных SSE
+            // Установка состояния ballInHand изSSE
             ballInHand = !!data.ball_in_hand;
 
-            // determine local player's role based on names from server
+            // смотрим роль локального игрока
             if (localPlayerName) {
                 if (localPlayerName === data.player1) localPlayerRole = 1;
                 else if (localPlayerName === data.player2) localPlayerRole = 2;
                 else localPlayerRole = 0;
             }
 
-            // only allow turns when both players are present
+            // разрешаем ход только если оба игрока присутствуют
             const bothPresent = !!(data.player1 && data.player2);
             myTurn = (localPlayerRole !== 0) && (data.current_player === localPlayerRole) && bothPresent;
 
             updateUI(data);
         } catch (err) {
-            // ignore keepalive or malformed events
-            // console.error('SSE parse error', err);
         }
     };
     es.onerror = (err) => console.error('EventSource error', err);
 
-    // Input handlers
+    // Хэндлеры ввода
     canvas.addEventListener('mousedown', e => handleStart(e.clientX, e.clientY));
     document.addEventListener('mousemove', e => handleMove(e.clientX, e.clientY));
     document.addEventListener('mouseup', handleEnd);
@@ -107,48 +101,44 @@ function initGame(id, playerName) {
     document.addEventListener('touchend', handleEnd);
 }
 
-// === RESIZE: настраиваем canvas под CSS-ширину и DPR ===
+// ресайз канваса с учётом DPR
 function resizeCanvas() {
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    // guard
     if (!rect.width || !rect.height) return;
 
     dpr = window.devicePixelRatio || 1;
 
-    // Выставляем физические размеры холста (device pixels)
+    // физические размеры холста
     canvas.width = Math.round(rect.width * dpr);
     canvas.height = Math.round(rect.height * dpr);
 
-    // ВАЖНО: матрица так, чтобы далее рисовать в CSS px
-    // Если использовать setTransform, координаты далее - CSS px.
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     lastRect.width = rect.width;
     lastRect.height = rect.height;
 }
 
-// === ПРЕОБРАЗОВАНИЯ КООРДИНАТ ===
 // screen coords (clientX, clientY) -> game coords (x,y), где (0,0) - внутренний левый угол игрового поля (без борта)
 function screenToGame(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
-    const sx = clientX - rect.left; // CSS px from left
+    const sx = clientX - rect.left; 
     const sy = clientY - rect.top;
 
-    // Пропорция: CSS px per game unit
+    // ыSS px per game unit
     const scaleX = rect.width / totalGameWidth;
     const scaleY = rect.height / totalGameHeight;
-    // используем один масштаб (сохранение пропорций) - берем min, чтобы не растянуть
+    // используем один масштаб - берем min, иначе будет растяжение стола
     const scale = Math.min(scaleX, scaleY);
 
-    // вычисляем начало игрового поля (может быть центрированным если canvas не имеет точного соотношения)
+    // вычисляем начало игрового поля внутри canvas
     // посчитаем offset чтобы центрировать таблицу в canvas (если доступны дополнительные отступы)
     const drawTotalW = totalGameWidth * scale;
     const drawTotalH = totalGameHeight * scale;
     const offsetX = (rect.width - drawTotalW) / 2;
     const offsetY = (rect.height - drawTotalH) / 2;
 
-    // gameX включает RAIL_SIZE смещение: 0..TABLE_WIDTH
+    // gameX включает RAIL_SIZE смещение от края canvas
     const gameX = (sx - offsetX) / scale - RAIL_SIZE;
     const gameY = (sy - offsetY) / scale - RAIL_SIZE;
 
@@ -171,25 +161,25 @@ function gameToScreen(gameX, gameY) {
     return { x: sx, y: sy, scale };
 }
 
-// === INPUT HANDLERS ===
+// хэндлеры ввода
 function handleStart(clientX, clientY) {
     if (!gameState) return;
     const pos = screenToGame(clientX, clientY);
     
-    // Если разрешено поставить биток — один клик ставит его
+    // Если разрешено поставить биток - один клик ставит
     if (ballInHand && myTurn) {
         placeCueAt(pos.x, pos.y);
         return;
     }
     
-    // prohibit interacting when table is moving or it's not your turn
+    // запретить прицеливание, если шары движутся или не наш ход
     if (gameState.is_moving) return;
     if (!myTurn) return;
     
     const cueBall = (gameState.balls || []).find(b => b.number === 0 && !b.pocketed);
     if (!cueBall) return;
     const dist = Math.hypot(pos.x - cueBall.x, pos.y - cueBall.y);
-    // более удобный радиус захвата на мобильных
+    // мобильная поддержка: увеличить зону захвата кия
     if (dist < 250) {
         grabbed = true;
         pullPos = { x: pos.x, y: pos.y };
@@ -227,7 +217,7 @@ function updateAim(inputX, inputY, cueBall) {
     computedPower = Math.min(1, dist / MAX_PULL_DIST);
 }
 
-// === СЕТЕВАЯ ОТРАБОТКА ===
+// отправка удара на сервер
 function shoot(angle, power) {
     fetch('/game/shoot', {
         method: 'POST',
@@ -250,13 +240,13 @@ function placeCueAt(gameX, gameY) {
         if (!res.ok) {
             res.text().then(t => console.warn('place failed:', t));
         } else {
-            // успех — дождёмся следующего SSE-обновления, чтобы состояние подтянулось
+            // ждем подтверждения от сервера через SSE
         }
     }).catch(console.error);
 }
 
 function updateUI(data) {
-    // Обновляем имена игроков в header
+    // Обновляем имена игроков в header'е
     const headerP1 = document.getElementById('headerPlayer1');
     const headerP2 = document.getElementById('headerPlayer2');
     
@@ -290,7 +280,6 @@ function updateUI(data) {
         if (indicator) indicator.classList.toggle('active', data.current_player === 2);
     }
     
-    // Также обновляем старые элементы (для совместимости с index.html)
     const legacyP1 = document.getElementById('player1Info');
     const legacyP2 = document.getElementById('player2Info');
     
@@ -306,11 +295,10 @@ function updateUI(data) {
         legacyP2.classList.toggle('active', data.current_player === 2);
     }
 }
-// === РЕНДЕР ===
 function gameLoop() {
     if (!ctx || !canvas) return;
 
-    // Получаем rect каждый кадр (на случай layout shift)
+    // Получаем rect каждый кадр на случай изменения CSS размеров
     const rect = canvas.getBoundingClientRect();
     if (rect.width !== lastRect.width || rect.height !== lastRect.height) {
         // Если CSS изменился - пересоздать физический размер холста
@@ -340,15 +328,12 @@ function drawTable() {
     const drawTotalH = totalGameHeight * scale;
     const offsetX = (rect.width - drawTotalW) / 2;
     const offsetY = (rect.height - drawTotalH) / 2;
-
-    // 3) play area (внутреннее зелёное поле)
     const playX = offsetX + RAIL_SIZE * scale;
     const playY = offsetY + RAIL_SIZE * scale;
     const playW = TABLE_WIDTH * scale;
     const playH = TABLE_HEIGHT * scale;
     const cornerRadius = 8 * scale;
 
-    // ---- Позиции лунок: 2 вертикальных столбца по 3 лунки ----
     const pockets = [
         // левая колонка (top, middle, bottom)
         { x: 0, y: 0 },
@@ -360,16 +345,16 @@ function drawTable() {
         { x: TABLE_WIDTH, y: TABLE_HEIGHT }
     ];
 
-    // Радиус лунок (игровые единицы) - синхронизируйте с сервером (60.0)
+    // Радиус лунок и.е. синхронизируем с сервером (60.0)
     const pocketRadiusGame = 60.0;
     const pocketRadiusPx = pocketRadiusGame * scale;
 
-    // 4) Рисуем play area, вырезаем лунки (clip evenodd)
+    // Рисуем стол, вырезаем лунки (clip evenodd)
     ctx.save();
     ctx.beginPath();
     addRoundedRectPath(ctx, playX, playY, playW, playH, cornerRadius);
 
-    // Добавляем в path круги для лунок - они станут "дырками"
+    // Добавляем в path круги для лунок
     for (const p of pockets) {
         const sx = playX + p.x * scale;
         const sy = playY + p.y * scale;
@@ -377,15 +362,15 @@ function drawTable() {
         ctx.arc(sx, sy, pocketRadiusPx, 0, Math.PI * 2);
     }
 
-    // Вырезаем (evenodd)
+    // Вырезаем
     ctx.clip('evenodd');
 
-    // Заливаем сукно
-    ctx.fillStyle = '#0f8b1f'; // мягкий зелёный (можете поменять)
+    // филл стола
+    ctx.fillStyle = '#0f8b1f';
     ctx.fillRect(playX, playY, playW, playH);
     ctx.restore();
 
-    // Если разрешена постановка — показать подсказку
+    // Если разрешена постановка битка (нарушение, сотояние ball in hand) - показать подсказку
     if (ballInHand && myTurn) {
         ctx.save();
         ctx.font = `${Math.max(12, 18 * Math.min(scale,1))}px sans-serif`;
@@ -395,7 +380,7 @@ function drawTable() {
         ctx.restore();
     }
 
-    // If second player hasn't joined yet, show waiting text centered on the play area
+    // Если ждем второго игрока - показать сообщение посередине стола
     if (gameState && (!gameState.player2 || gameState.player2 === '')) {
         ctx.save();
         const textColor = '#0b6f18'; // чуть темнее цвета сукна
@@ -408,37 +393,34 @@ function drawTable() {
         ctx.restore();
     }
 
-    // 5) Рисуем тонкую окантовку поля
+    // Рисуем окантовку 
     ctx.strokeStyle = '#133c12';
     ctx.lineWidth = Math.max(2, 4 * scale);
     ctx.strokeRect(playX, playY, playW, playH);
 
-    // 6) Рисуем горловины лунок (чёрные внутренности) - чуть больше, чем вырез
+    // 7) Накладываем рейки  поверх лунок
     pockets.forEach(p => {
         const sx = playX + p.x * scale;
         const sy = playY + p.y * scale;
 
-        // тёмная горловина
         ctx.beginPath();
         ctx.fillStyle = '#000';
         ctx.arc(sx, sy, pocketRadiusPx * 1.08, 0, Math.PI * 2);
         ctx.fill();
 
-        // пластиковая вставка/ободок (светлый тон у края)
         ctx.beginPath();
         ctx.strokeStyle = 'rgba(220,220,220,0.08)';
         ctx.lineWidth = Math.max(1, 2 * scale);
         ctx.arc(sx, sy, pocketRadiusPx * 0.78, 0, Math.PI * 2);
         ctx.stroke();
 
-        // внутренняя тень (для глубины)
+        // внутренняя тень 
         ctx.beginPath();
         ctx.fillStyle = 'rgba(0,0,0,0.18)';
         ctx.arc(sx + pocketRadiusPx * 0.035, sy + pocketRadiusPx * 0.035, pocketRadiusPx * 0.92, 0, Math.PI * 2);
         ctx.fill();
     });
 
-    // 7) Накладываем рейки (rail) поверх - это делает лунки "встроенными"
     ctx.fillStyle = '#4a2511';
     // верхняя рейка
     ctx.fillRect(offsetX, offsetY, drawTotalW, RAIL_SIZE * scale);
@@ -449,11 +431,10 @@ function drawTable() {
     // правая рейка
     ctx.fillRect(offsetX + drawTotalW - RAIL_SIZE * scale, offsetY, RAIL_SIZE * scale, drawTotalH);
 
-    // 8) Декоративные винтики / блики на рейке (необязательно)
+    // Декорации
     const screwRad = 3 * scale;
     ctx.fillStyle = '#cfcfcf';
     for (let i = 0; i < 6; i++) {
-        // по верхней рейке
         const sx = offsetX + (drawTotalW * (i + 1) / 7);
         const sy = offsetY + (RAIL_SIZE * scale) / 2;
         ctx.beginPath();
@@ -462,7 +443,7 @@ function drawTable() {
     }
 }
 
-// Вспомогательная: создать путь закруглённого прямоугольника (не закрываем path, чтобы arcs добавлялись как субпути)
+// Всп. функция Сздать путь закруглённого прямоугольника (не закрываем путь, чтобы арки добавлялись как субпути)
 function addRoundedRectPath(ctx, x, y, w, h, r) {
     const radius = Math.max(0, r);
     ctx.moveTo(x + radius, y);
@@ -470,11 +451,10 @@ function addRoundedRectPath(ctx, x, y, w, h, r) {
     ctx.arcTo(x + w, y + h, x, y + h, radius);
     ctx.arcTo(x, y + h, x, y, radius);
     ctx.arcTo(x, y, x + w, y, radius);
-    // не делаем closePath, чтобы кружки-лузы были отдельными под-путями
 }
 
 
-// Вспомогательная функция: добавить путь закругленного rect (без fill)
+// Вспомогательная функция добавить путь закругленного rect
 function addRoundedRectPath(ctx, x, y, w, h, r) {
     const radius = Math.max(0, r);
     ctx.moveTo(x + radius, y);
@@ -482,10 +462,9 @@ function addRoundedRectPath(ctx, x, y, w, h, r) {
     ctx.arcTo(x + w, y + h, x, y + h, radius);
     ctx.arcTo(x, y + h, x, y, radius);
     ctx.arcTo(x, y, x + w, y, radius);
-    // path is left open (do not closePath) so that arcs added later are separate subpaths
 }
 
-// utility: rounded rect
+// Вспомогательная функция рисовать закругленный rect
 function roundRect(ctx, x, y, w, h, r, fill, stroke) {
     if (typeof r === 'undefined') r = 5;
     ctx.beginPath();
@@ -521,12 +500,10 @@ function drawBall(ball) {
     else ctx.fillStyle = '#f9ca24';
     ctx.fill();
 
-    // border
     ctx.lineWidth = Math.max(1, 2 * (scale));
     ctx.strokeStyle = '#333';
     ctx.stroke();
 
-    // number
     if (ball.number > 0) {
         ctx.fillStyle = (ball.number === 8 ? '#fff' : '#000');
         ctx.font = `${Math.max(8, r)}px Arial`;
@@ -539,7 +516,7 @@ function drawBall(ball) {
 function drawCue() {
     if (!gameState || !gameState.balls) return;
     
-    // Не показывать кий в режиме ball-in-hand
+    // Не показывать кий в режиме ball in hand
     if (ballInHand && myTurn) return;
     
     const cueBall = gameState.balls.find(b => b.number === 0 && !b.pocketed);
@@ -573,16 +550,16 @@ function drawCue() {
     
     const cueLenPx = cueLenGame * scale;
 
-    const offset = 20 * scale; // Отступ от шара
+    const offset = 20 * scale; // отступ от центра шара
     const startX = x + Math.cos(angleOpposite) * offset;
     const startY = y + Math.sin(angleOpposite) * offset;
     const endX = startX + Math.cos(angleOpposite) * cueLenPx;
     const endY = startY + Math.sin(angleOpposite) * cueLenPx;
 
-    // Толщина кия тоже может меняться с силой
+    // толщина кия от силы 
     const cueWidth = Math.max(2, (3 + drawPower * 5) * scale);
 
-    // Кий
+    // рендер кия
     ctx.strokeStyle = '#8B4513';
     ctx.lineWidth = cueWidth;
     ctx.lineCap = 'round';
@@ -591,13 +568,13 @@ function drawCue() {
     ctx.lineTo(endX, endY);
     ctx.stroke();
 
-    // Наконечник
+    // рендер наконечника
     ctx.fillStyle = '#fff';
     ctx.beginPath();
     ctx.arc(startX, startY, Math.max(2, 4 * scale), 0, Math.PI * 2);
     ctx.fill();
 
-    // Линия прицеливания (только когда тянем)
+    // Рендер линии прицеливания когда тянем кий
     if (grabbed) {
         ctx.save();
         ctx.setLineDash([6 * scale, 8 * scale]);
@@ -606,7 +583,7 @@ function drawCue() {
         ctx.beginPath();
         ctx.moveTo(x, y);
         
-        // Длина линии прицеливания тоже зависит от силы
+        // Длина линии прицеливания  зависит от силы
         const aimLength = 1000 + drawPower * 500;
         ctx.lineTo(
             x + Math.cos(mouseAngle) * aimLength * scale, 
@@ -615,7 +592,7 @@ function drawCue() {
         ctx.stroke();
         ctx.restore();
         
-        // Индикатор силы (опционально)
+        // Индикатор силы
         if (drawPower > 0.05) {
             const barWidth = 80;
             const barHeight = 8;
@@ -626,7 +603,7 @@ function drawCue() {
             ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
             ctx.fillRect(barX, barY, barWidth, barHeight);
             
-            // Градиент заполнения
+            // Градиент ффилл
             const gradient = ctx.createLinearGradient(barX, barY, barX + barWidth, barY);
             gradient.addColorStop(0, '#0f0');
             gradient.addColorStop(0.5, '#ff0');
@@ -649,5 +626,5 @@ function drawCue() {
     }
 }
 
-// Expose initializer
+// Экспортируем initGame в глобальную область видимости
 if (typeof window !== 'undefined') window.initGame = initGame;

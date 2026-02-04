@@ -7,13 +7,12 @@ import (
 )
 
 const (
-	// ИЗМЕНЕНИЕ: ВЕРТИКАЛЬНАЯ ОРИЕНТАЦИЯ
-	TableWidth  = 1400.0 // Было 2800
-	TableHeight = 2800.0 // Было 1400
+	TableWidth  = 1400.0
+	TableHeight = 2800.0
 	BallRadius  = 28.5
 	CueRadius   = 12
 
-	// ФИЗИЧЕСКИЕ КОНСТАНТЫ (БЕЗ ИЗМЕНЕНИЙ)
+	// физические констануты
 	RollingFriction    = 0.992
 	SlidingFriction    = 0.998
 	AngularFriction    = 0.99
@@ -21,7 +20,6 @@ const (
 	MaxInitialVelocity = 5000.0
 	MinVelocity        = 2.0
 	StopThreshold      = 5.0
-	DtScale            = 0.016
 )
 
 type Ball struct {
@@ -63,14 +61,14 @@ func NewGameService() *GameService {
 	}
 }
 
-// GetGame returns the game state for a given ID (or nil if not found)
+// Возвращает состояние игры по ID игры
 func (s *GameService) GetGame(gameID string) *GameState {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.games[gameID]
 }
 
-// JoinGame joins or creates a game and assigns player1/player2 roles
+// Joingame добавляет игрока в игру и возвращает обновленное состояние игры и роль игрока
 func (s *GameService) JoinGame(gameID, playerName string) (*GameState, string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -97,7 +95,7 @@ func (s *GameService) JoinGame(gameID, playerName string) (*GameState, string) {
 	return game, ""
 }
 
-// SetCueAngle sets the cue angle for a game
+// Ставит угол прицеливания для игрока
 func (s *GameService) SetCueAngle(gameID string, angle float64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -106,7 +104,7 @@ func (s *GameService) SetCueAngle(gameID string, angle float64) {
 	}
 }
 
-// GetPlayers returns player names for a game
+// GetPlayers возвращает имена игроков в игре
 func (s *GameService) GetPlayers(gameID string) (string, string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -180,7 +178,7 @@ func (s *GameService) UpdateGameState(gameID string) {
 		ball.X += ball.VelX * dt
 		ball.Y += ball.VelY * dt
 
-		// Борта (используем новые TableWidth / TableHeight)
+		// Борты стола
 		if ball.X-ball.Radius < 0 {
 			ball.X = ball.Radius
 			ball.VelX = -ball.VelX * CushionRestitution
@@ -205,7 +203,7 @@ func (s *GameService) UpdateGameState(gameID string) {
 		game.checkPocketing(ball)
 	}
 
-	// Столкновения шаров - БЕЗ ИЗМЕНЕНИЙ
+	// столкновения шаров
 	for i := 0; i < len(game.Balls); i++ {
 		for j := i + 1; j < len(game.Balls); j++ {
 			game.checkBallCollision(game.Balls[i], game.Balls[j])
@@ -245,15 +243,14 @@ func (s *GameService) ShootCue(gameID string, angle, power float64) {
 		}
 	}
 	game.IsMoving = true
-	game.LastUpdateTime = time.Now() // Важно обновить время
+	game.LastUpdateTime = time.Now() // Обновляем время последнего обновления
 
-	game.CurrentPlayer = 3 - game.CurrentPlayer // Смена игрока
+	// Смна игрока сразу после удара
+
+	game.CurrentPlayer = 3 - game.CurrentPlayer
 }
 
-// ... Остальные методы (SetCueAngle и т.д.) ...
-
 func (game *GameState) checkPocketing(ball *Ball) {
-	// ИЗМЕНЕНИЕ: КООРДИНАТЫ ЛУНОК (Вертикальная раскладка)
 	pockets := []struct{ x, y float64 }{
 		{0, 0},                        // Top-Left
 		{TableWidth, 0},               // Top-Right
@@ -280,14 +277,14 @@ func (game *GameState) checkPocketing(ball *Ball) {
 				ball.VelY = 0
 				ball.Omega = 0
 
-				// Включаем ball-in-hand. Текущий игрок на сервере
-				// уже сменился в ShootCue (ваша прежняя логика), поэтому
-				// тот, кто ходит -сможет поставить шар.
+				// Включаем режим установки битка игроку от нарушителя. Текущий игрок на сервере
+				// уже сменился в ShootCue, поэтому
+				// тот, кто ходит -сможет поставить шар
 				game.BallInHand = true
 				return
 			}
 
-			// Обычный шар -падает в лузу
+			// Если не биток, а обыычный шар -падает в лузу
 			ball.Pocketed = true
 			ball.X = pocket.x
 			ball.Y = pocket.y
@@ -342,10 +339,7 @@ func (game *GameState) checkBallCollision(b1, b2 *Ball) {
 
 func initializeBalls() []*Ball {
 	balls := make([]*Ball, 16)
-
-	// ИЗМЕНЕНИЕ: РАССТАНОВКА ШАРОВ ДЛЯ ВЕРТИКАЛИ
-
-	// Биток (внизу стола)
+	// Биток ставится внизу стола
 	balls[0] = &Ball{
 		X:         TableWidth / 2,
 		Y:         TableHeight * 0.75,
@@ -359,15 +353,15 @@ func initializeBalls() []*Ball {
 	apexY := TableHeight * 0.25 // Точка вершины пирамиды
 
 	ballNum := 1
-	// Строим пирамиду "вверх" от вершины (к началу координат), или вниз?
-	// Обычно разбивают от "дома" в сторону пирамиды. Биток на 0.75, значит пирамида на 0.25.
-	// Вершина (1-й шар) ближе к битку. Остальные ряды ДАЛЬШЕ от битка (меньше по Y).
+	// Строим пирамиду "вверх" от вершины (к началу координат)
+	// Разбивают от "дома" в сторону пирамиды. Биток на 0.75, пирамида на 0.25.
+	// Вершина ближе к битку. Остальные ряды дальше от битка (меньше по Y).
 
 	for row := 0; row < 5; row++ {
 		// Y уменьшается для каждого следующего ряда (уходим к верхнему борту 0)
 		rowY := apexY - float64(row)*(BallRadius*1.732)
 
-		startX := apexX - float64(row)*BallRadius // Центрируем ряд по X
+		startX := apexX - float64(row)*BallRadius // Центрируем по X
 
 		for col := 0; col <= row; col++ {
 			x := startX + float64(col)*BallRadius*2

@@ -33,7 +33,6 @@ h2 {
     font-size: 1.3rem;
 }
 
-/* Menu */
 .menu {
     background: rgba(255, 255, 255, 0.95);
     border-radius: 12px;
@@ -55,8 +54,6 @@ h2 {
     color: #1a472a;
     margin-bottom: 1rem;
 }
-
-/* Forms */
 form {
     display: flex;
     flex-direction: column;
@@ -99,8 +96,6 @@ button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
 }
-
-/* Game Container */
 #gameContainer {
     display: flex;
     flex-direction: column;
@@ -138,10 +133,8 @@ button:disabled {
 
 .turn-indicator { width:0; height:0; display:inline-block; transform: translateY(-1px); }
 .turn-indicator.active { border-left:6px solid transparent; border-right:6px solid transparent; border-bottom:10px solid #28a745; }
-/* show small triangle before header player name when active */
 .player-info-name.active::before { content: '' ; display:inline-block; margin-right:6px; width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-bottom:10px solid #28a745; transform: translateY(-1px); }
 
-/* Canvas */
 #billiardsTable {
     width: 100%;
     height: auto;
@@ -150,8 +143,6 @@ button:disabled {
     margin-bottom: 1.5rem;
     box-shadow: inset 0 4px 12px rgba(0, 0, 0, 0.3);
 }
-
-/* Responsive game layout: gutters + center table */
 .game-layout {
     display: flex;
     align-items: stretch;
@@ -184,8 +175,6 @@ button:disabled {
 
 .status-line { margin-top: 8px; color: #555; font-weight: 600; }
 
-/* Make canvas fill available area while keeping aspect ratio of table (vertical)
-   We'll size canvas in JS by CSS width and computed height, but provide max constraints */
 #billiardsTable {
     width: 100%;
     max-width: 800px;
@@ -193,7 +182,6 @@ button:disabled {
     box-shadow: 0 8px 30px rgba(0,0,0,0.25);
 }
 
-/* Controls */
 #controls {
     background: #f5f5f5;
     padding: 1.5rem;
@@ -295,8 +283,6 @@ button:disabled {
     margin: 1.5rem 0;
     font-size: 0.9rem;
 }
-
-/* Game Section */
 .game-section {
     background: white;
     padding: 1.5rem;
@@ -322,7 +308,6 @@ button:disabled {
     margin-top: 0.3rem;
 }
 
-/* Players Status */
 .players-status {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -345,7 +330,6 @@ button:disabled {
     font-style: italic;
 }
 
-/* Ball Container */
 .ball-container {
     display: flex;
     justify-content: center;
@@ -403,7 +387,6 @@ button:disabled {
     line-height: 1.4;
 }
 
-/* Buttons & Forms */
 form {
     display: flex;
     flex-direction: column;
@@ -438,7 +421,6 @@ form {
     background: #ccc;
 }
 
-/* Hint */
 .hint {
     text-align: center;
     color: #999;
@@ -446,7 +428,6 @@ form {
     margin-top: 1rem;
 }
 
-/* Copy Code */
 .copy-code {
     display: flex;
     gap: 0.5rem;
@@ -478,7 +459,6 @@ form {
     background: #e0e0e0;
 }
 
-/* Loading State */
 .htmx-swapping {
     opacity: 0.5;
 }
@@ -487,7 +467,6 @@ form {
     opacity: 1;
 }
 
-/* Mobile */
 @media (max-width: 500px) {
     h1 {
         font-size: 2rem;
@@ -512,17 +491,14 @@ form {
     }
 }
 
-/* Mobile portrait: hide gutters and let table occupy full viewport */
 @media (max-width: 900px) {
     .game-layout { padding: 0; }
     .gutter { display: none; }
     .table-area { padding: 8px; }
-    /* Make the billiards table take most of the viewport for comfortable play */
     #billiardsTable { max-width: none; width: 100vw; height: calc(100vh - 130px); border-radius: 6px; border-width: 6px; }
     #gameContainer { padding: 8px; }
     .game-header { margin-bottom: 6px; padding-bottom: 6px; }
     .player-info-name { font-size: 0.95rem; font-weight:700; }
     .players-list .player { font-size: 0.85rem; padding: 6px 8px; }
-    /* Hide textual status; we use indicators next to names */
     #status { display: none !important; }
 }

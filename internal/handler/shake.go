@@ -137,20 +137,20 @@ func (h *ShakeHandler) Shoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// авторизация на стороне сервера: запретить стрельбу, пока оба игрока не присоединились
+	// авторизация на стороне сервера, запретить удары кием, пока оба игрока не присоединились
 	game := h.gameService.GetGame(req.GameID)
 	if game == nil {
 		http.Error(w, "игра не найдена", http.StatusNotFound)
 		return
 	}
 
-	// если второй игрок еще не присоединился, запретить стрельбу
+	// если второй игрок еще не присоединился, запретить удары кием
 	if game.Player1 == "" || game.Player2 == "" {
 		http.Error(w, "ожидание второго игрока", http.StatusForbidden)
 		return
 	}
 
-	// разрешить выстрел только если запрашивающий - текущий игрок
+	// разрешить удар кием только если запрашивающий текущий игрок
 	allowed := false
 	if req.PlayerName != "" {
 		if game.CurrentPlayer == 1 && req.PlayerName == game.Player1 {
@@ -180,7 +180,7 @@ func (h *ShakeHandler) GetGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Выполнить шаблон с map, чтобы ключи соответствовали ожиданиям шаблонов (ключи в нижнем регистре)
+	// Выполнить шаблон с map, чтобы ключи соответствовали ожиданиям шаблонов
 	h.templates.ExecuteTemplate(w, "game.html", map[string]interface{}{
 		"gameID":     gameID,
 		"playerName": "",
@@ -190,8 +190,8 @@ func (h *ShakeHandler) GetGame(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// StreamGame передает состояние игры как Server-Sent Events (SSE).
-// На каждом тике обновляет физику и отправляет JSON-закодированное состояние клиенту.
+// StreamGame передает состояние игры как ServerSent Events (SSE),
+// а каждом тике обновляет физику и отправляет JSON-закодированное состояние клиенту
 func (h *ShakeHandler) StreamGame(w http.ResponseWriter, r *http.Request) {
 	gameID := r.URL.Query().Get("game_id")
 
@@ -206,7 +206,7 @@ func (h *ShakeHandler) StreamGame(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	ticker := time.NewTicker(time.Millisecond * 16) // ~60Hz
+	ticker := time.NewTicker(time.Millisecond * 16)
 	defer ticker.Stop()
 
 	ctx := r.Context()
@@ -215,7 +215,7 @@ func (h *ShakeHandler) StreamGame(w http.ResponseWriter, r *http.Request) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// Обновление физики на стороне сервера
+			// обновление физики на стороне сервера
 			h.gameService.UpdateGameState(gameID)
 
 			game := h.gameService.GetGame(gameID)
@@ -247,12 +247,10 @@ func (h *ShakeHandler) StreamGame(w http.ResponseWriter, r *http.Request) {
 				})
 			}
 
-			// Запись строки SSE "data:" с JSON-данными
-			// кодировать в буфер, чтобы избежать смешивания записей
+			// Запись строки SSE "data:" с данными с json
 			var buf []byte
 			b, err := json.Marshal(state)
 			if err != nil {
-				// пропустить этот тик
 				continue
 			}
 			buf = append(buf, []byte("data: ")...)
@@ -285,7 +283,7 @@ func (h *ShakeHandler) PlaceCue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Разрешить размещение только если BallInHand и запрашивающий - текущий игрок
+	// Разрешить размещение только если биток попал в лунку и запрашивающий - текущий игрок
 	if !game.BallInHand {
 		http.Error(w, "ball in hand не разрешен", http.StatusForbidden)
 		return
@@ -305,7 +303,8 @@ func (h *ShakeHandler) PlaceCue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Базовая валидация координат: внутри стола, не в лузе и не пересекается с другими шарами
+	// валидация
+	// биток внутри стола, не в лузе и не пересекается с другими шарами
 	// Найти биток (тип из пакета service)
 	var cueBall *service.Ball
 	for _, b := range game.Balls {
@@ -315,18 +314,18 @@ func (h *ShakeHandler) PlaceCue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if cueBall == nil {
-		http.Error(w, "биток отсутствует", http.StatusInternalServerError)
+		http.Error(w, "нет битка", http.StatusInternalServerError)
 		return
 	}
 
-	// границы (используем cueBall.Radius, если установлен, иначе service.BallRadius)
+	// границы (используем cueBall.Radius, service.BallRadius)
 	rBall := cueBall.Radius
 	if rBall == 0 {
 		rBall = service.BallRadius
 	}
 
 	if req.X < rBall || req.X > service.TableWidth-rBall || req.Y < rBall || req.Y > service.TableHeight-rBall {
-		http.Error(w, "неверное размещение: за пределами границ", http.StatusBadRequest)
+		http.Error(w, "неверное размещение битка, за пределами границ стола", http.StatusBadRequest)
 		return
 	}
 
@@ -344,7 +343,7 @@ func (h *ShakeHandler) PlaceCue(w http.ResponseWriter, r *http.Request) {
 		dx := req.X - p.x
 		dy := req.Y - p.y
 		if math.Hypot(dx, dy) < pocketRadius+2 {
-			http.Error(w, "неверное размещение: слишком близко к лузе", http.StatusBadRequest)
+			http.Error(w, "неверное размещение битка: слишком близко к лузе", http.StatusBadRequest)
 			return
 		}
 	}
@@ -357,7 +356,7 @@ func (h *ShakeHandler) PlaceCue(w http.ResponseWriter, r *http.Request) {
 		dx := req.X - b.X
 		dy := req.Y - b.Y
 		if math.Hypot(dx, dy) < (rBall + b.Radius + 2) {
-			http.Error(w, "неверное размещение: пересекается с шаром", http.StatusBadRequest)
+			http.Error(w, "неверное размещение битка: пересекается с шаром", http.StatusBadRequest)
 			return
 		}
 	}
@@ -371,10 +370,10 @@ func (h *ShakeHandler) PlaceCue(w http.ResponseWriter, r *http.Request) {
 	cueBall.Omega = 0
 	cueBall.IsSliding = false
 
-	// Очистить BallInHand
+	// убрать состояние что биток в руе
 	game.BallInHand = false
 	game.IsMoving = false
 	game.LastUpdateTime = time.Now()
-
+	// уведомить всех игроков об обновлении состояния
 	w.WriteHeader(http.StatusOK)
 }
