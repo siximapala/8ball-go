@@ -459,6 +459,51 @@ form {
     background: #e0e0e0;
 }
 
+.turn-ball {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: middle;
+  box-sizing: border-box;
+  border: 2px solid rgba(0,0,0,0.12);
+  background: transparent;
+  transition: transform 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
+  margin-left: 0;
+}
+
+.turn-ball.legacy {
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+}
+
+.turn-ball.on {
+  background: #2ecc71; /* зелёный */
+  box-shadow: 0 0 6px rgba(46,204,113,0.35);
+  transform: scale(1.05);
+}
+
+.turn-ball:not(.on) {
+  background: transparent;
+  border-color: rgba(0,0,0,0.14);
+}
+
+.player-title, #player1Info, #player2Info, .player-name {
+  transition: color 120ms ease, font-weight 120ms ease;
+}
+.player-title {
+  margin-left: 6px;
+}
+.player-info .player-title, .player-name {
+  color: #222;
+}
+.player-title.active, .player-name.active {
+  font-weight: 700;
+  color: #0a7a2a;
+}
+
 .htmx-swapping {
     opacity: 0.5;
 }

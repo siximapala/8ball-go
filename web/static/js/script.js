@@ -298,52 +298,98 @@ if (window.__8ball_script_loaded) {
     }).catch(console.error);
   }
 
-  function updateUI(data) {
-    const headerP1 = document.getElementById('headerPlayer1');
-    const headerP2 = document.getElementById('headerPlayer1') ? document.getElementById('headerPlayer2') : null;
+function updateUI(data) {
+  try { window.gameState = data; } catch (e) {}
 
-    if (headerP1 && data.player1) {
-      headerP1.textContent = data.player1;
-      headerP1.classList.toggle('active', data.current_player === 1);
+  function setHeader(id, name, isActive) {
+    let el = document.getElementById(id);
+    if (!el) {
+      const maybe = document.querySelector(`#gameHeader .player-info .${id}`) || null;
+      if (maybe) el = maybe;
+    }
+    // последний fallback — legacy span
+    if (!el && id === 'headerPlayer1') el = document.getElementById('player1Info');
+    if (!el && id === 'headerPlayer2') el = document.getElementById('player2Info');
+
+    // если всё ещё нет — создадим в .player-info
+    if (!el) {
+      const container = document.querySelector('#gameHeader .player-info') || document.getElementById('gameHeader');
+      if (!container) return;
+      el = document.createElement('div');
+      el.id = id;
+      el.className = 'player-info-name';
+      container.insertBefore(el, container.firstChild || null);
     }
 
-    if (headerP2 && data.player2) {
-      headerP2.textContent = data.player2;
-      headerP2.classList.toggle('active', data.current_player === 2);
+    // убедимся, что внутри есть .turn-ball и .player-title
+    let ball = el.querySelector(':scope > .turn-ball');
+    if (!ball) {
+      ball = document.createElement('span');
+      ball.className = 'turn-ball';
+      el.insertBefore(ball, el.firstChild);
+    }
+    let title = el.querySelector(':scope > .player-title');
+    if (!title) {
+      title = document.createElement('span');
+      title.className = 'player-title';
+      el.appendChild(title);
     }
 
-    const gutterP1 = document.getElementById('gutterPlayer1');
-    const gutterP2 = document.getElementById('gutterPlayer2');
+    // установить имя
+    title.textContent = name || '';
 
-    if (gutterP1 && data.player1) {
-      const nameSpan = gutterP1.querySelector('.player-name');
-      const indicator = gutterP1.querySelector('.turn-indicator');
-      if (nameSpan) nameSpan.textContent = data.player1;
-      if (indicator) indicator.classList.toggle('active', data.current_player === 1);
-    }
-
-    if (gutterP2 && data.player2) {
-      const nameSpan = gutterP2.querySelector('.player-name');
-      const indicator = gutterP2.querySelector('.turn-indicator');
-      if (nameSpan) nameSpan.textContent = data.player2;
-      if (indicator) indicator.classList.toggle('active', data.current_player === 2);
-    }
-
-    const legacyP1 = document.getElementById('player1Info');
-    const legacyP2 = document.getElementById('player2Info');
-
-    if (legacyP1 && data.player1) {
-      const prefix = legacyP1.getAttribute('data-prefix') || '';
-      legacyP1.textContent = prefix + data.player1;
-      legacyP1.classList.toggle('active', data.current_player === 1);
-    }
-
-    if (legacyP2 && data.player2) {
-      const prefix = legacyP2.getAttribute('data-prefix') || '';
-      legacyP2.textContent = prefix + data.player2;
-      legacyP2.classList.toggle('active', data.current_player === 2);
-    }
+    // отобразить/скрыть шарик и проставить класс активности
+    ball.style.display = name ? 'inline-block' : 'none';
+    ball.classList.toggle('on', !!isActive);
+    el.classList.toggle('active', !!isActive);
   }
+
+  // header (из data приходят player1, player2, current_player)
+  setHeader('headerPlayer1', data.player1 || '', data.current_player === 1);
+  setHeader('headerPlayer2', data.player2 || '', data.current_player === 2);
+
+  // gutter (правый) — если есть
+  const gutterP1 = document.getElementById('gutterPlayer1');
+  if (gutterP1) {
+    const nameSpan = gutterP1.querySelector('.player-name') || gutterP1;
+    if (nameSpan) nameSpan.textContent = data.player1 || '';
+    const indicator = gutterP1.querySelector('.turn-indicator');
+    if (indicator) indicator.classList.toggle('active', data.current_player === 1);
+  }
+  const gutterP2 = document.getElementById('gutterPlayer2');
+  if (gutterP2) {
+    const nameSpan = gutterP2.querySelector('.player-name') || gutterP2;
+    if (nameSpan) nameSpan.textContent = data.player2 || '';
+    const indicator = gutterP2.querySelector('.turn-indicator');
+    if (indicator) indicator.classList.toggle('active', data.current_player === 2);
+  }
+
+  const legacyP1 = document.getElementById('player1Info');
+  if (legacyP1) {
+    legacyP1.textContent = (legacyP1.getAttribute('data-prefix') || '') + (data.player1 || '-');
+    legacyP1.classList.toggle('active', data.current_player === 1);
+  let lb = legacyP1.querySelector('.turn-ball');
+    if (!lb) {
+      lb = document.createElement('span'); lb.className = 'turn-ball legacy';
+      legacyP1.insertBefore(lb, legacyP1.firstChild);
+    }
+    lb.style.display = data.player1 ? 'inline-block' : 'none';
+    lb.classList.toggle('on', data.current_player === 1);
+  }
+  const legacyP2 = document.getElementById('player2Info');
+  if (legacyP2) {
+    legacyP2.textContent = (legacyP2.getAttribute('data-prefix') || '') + (data.player2 || '-');
+    legacyP2.classList.toggle('active', data.current_player === 2);
+    let lb = legacyP2.querySelector('.turn-ball');
+    if (!lb) {
+      lb = document.createElement('span'); lb.className = 'turn-ball legacy';
+      legacyP2.insertBefore(lb, legacyP2.firstChild);
+    }
+    lb.style.display = data.player2 ? 'inline-block' : 'none';
+    lb.classList.toggle('on', data.current_player === 2);
+  }
+}
+
   function gameLoop() {
     if (!ctx || !canvas) return;
     const rect = canvas.getBoundingClientRect();
