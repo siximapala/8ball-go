@@ -40,6 +40,7 @@ func New() (*App, error) {
 	r.Post("/join", shakeHandler.JoinGame)
 	r.Get("/game/state", shakeHandler.GetGameState)
 	r.Post("/game/shoot", shakeHandler.Shoot)
+	r.Post("/game/place", shakeHandler.PlaceCue)
 	r.Get("/ws", shakeHandler.GetGame)
 	r.Get("/events", shakeHandler.StreamGame)
 
