@@ -4,7 +4,6 @@ if (window.__8ball_script_loaded) {
 } else {
   window.__8ball_script_loaded = true;
 
-
   // Константы и состояние
   let gameId = '';
   let canvas = null;
@@ -39,7 +38,7 @@ if (window.__8ball_script_loaded) {
   let handlers = {};
   let debouncedResize = null;
 
-  // Ресайз с дебаунсом
+  // дебаунс
   function debounce(fn, ms = 100) {
     let t;
     const wrapper = (...args) => {
@@ -91,6 +90,54 @@ if (window.__8ball_script_loaded) {
     debouncedResize = null;
   }
 
+  // Рисует индикатор игрока: none 0, solid 1, stripe 2.
+  function renderTurnBall(el, setType, isActive) {
+    if (!el) return;
+    // очистим инлайн стили чтобы предыдущее не мешало
+    el.style.background = '';
+    el.style.backgroundClip = '';
+    el.style.border = '2px solid rgba(0,0,0,0.12)';
+    el.style.boxShadow = '';
+    el.style.display = setType === 0 && !isActive ? 'none' : 'inline-block';
+
+    // размеры
+    el.style.width = el.classList.contains('legacy') ? '12px' : '14px';
+    el.style.height = el.classList.contains('legacy') ? '12px' : '14px';
+    el.style.borderRadius = '50%';
+    el.style.verticalAlign = 'middle';
+
+    const solidColor = '#d63031';
+    const stripeColor = '#f9ca24';
+    if (setType === 1) {
+      // solid
+      el.style.background = `radial-gradient(circle at 30% 30%, #fff 0 18%, ${solidColor} 20% 100%)`;
+    } else if (setType === 2) {
+      // stripe: white center with colored band
+      el.style.background = `linear-gradient(90deg, white 25%, ${stripeColor} 25% 75%, white 75%)`;
+      el.style.backgroundClip = 'padding-box';
+    } else {
+      // no set assigned yet, keep transparent until assigned or show glow when active
+      el.style.background = 'transparent';
+    }
+
+    if (isActive) {
+      // glow to indicate current turn
+      el.style.boxShadow = '0 0 8px rgba(46,204,113,0.4)';
+      // if no set assigned, fallback to green fill so there is an indicator
+      if (setType === 0) {
+        el.style.background = '#2ecc71';
+      }
+      el.style.display = 'inline-block';
+    } else {
+      // remove glow
+      // ensure if there is set but not active, still visible
+      if (setType === 0) {
+        el.style.display = 'inline-block';
+        el.style.background = 'transparent';
+      }
+    }
+  }
+
   // Инициализируем игру
   function initGame(id, playerName) {
     teardownGame();
@@ -102,7 +149,7 @@ if (window.__8ball_script_loaded) {
     if (!canvas) throw new Error('Canvas #billiardsTable not found');
     ctx = canvas.getContext('2d');
 
-    // resizeCanvas с внутренней функцией
+    // resizeCanvas
     function resizeCanvas() {
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
@@ -129,17 +176,14 @@ if (window.__8ball_script_loaded) {
       }
     }
 
-    // устанавливаем обработчики ресайза
     handlers.resize = debounce(resizeCanvas, 120);
     handlers.orientation = debounce(resizeCanvas, 200);
 
     window.addEventListener('resize', handlers.resize);
     window.addEventListener('orientationchange', handlers.orientation);
 
-    // начальный ресайз
     ensureResize();
 
-    // луп анимации
     function loop() {
       gameLoop();
       rafId = requestAnimationFrame(loop);
@@ -161,21 +205,27 @@ if (window.__8ball_script_loaded) {
       es.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data);
+          // сохраняем state полностью
           gameState = data;
-          ballInHand = !!data.ball_in_hand;
+
+          // normalize flags we may use
+          ballInHand = !!(data.ball_in_hand || data.ballInHand);
+          const p1 = data.player1 || '';
+          const p2 = data.player2 || '';
 
           if (localPlayerName) {
-            if (localPlayerName === data.player1) localPlayerRole = 1;
-            else if (localPlayerName === data.player2) localPlayerRole = 2;
+            if (localPlayerName === p1) localPlayerRole = 1;
+            else if (localPlayerName === p2) localPlayerRole = 2;
             else localPlayerRole = 0;
           }
 
-          const bothPresent = !!(data.player1 && data.player2);
-          myTurn = (localPlayerRole !== 0) && (data.current_player === localPlayerRole) && bothPresent;
+          const bothPresent = !!(p1 && p2);
+          myTurn = (localPlayerRole !== 0) && ((data.current_player || data.current) === localPlayerRole) && bothPresent;
 
+          // call UI update with data
           updateUI(data);
         } catch (err) {
-        
+          // ignore malformed message
         }
       };
       es.onerror = (err) => {
@@ -183,7 +233,7 @@ if (window.__8ball_script_loaded) {
       };
     }
 
-    // Хэндлеры ввода (мышь и скрин тач )
+    // Хэндлеры ввода
     handlers.canvas_mousedown = (e) => handleStart(e.clientX, e.clientY);
     handlers.mousemove = (e) => handleMove(e.clientX, e.clientY);
     handlers.mouseup = () => handleEnd();
@@ -210,7 +260,7 @@ if (window.__8ball_script_loaded) {
     document.addEventListener('touchmove', handlers.touchmove, { passive: false });
     document.addEventListener('touchend', handlers.touchend, { passive: false });
 
-    // инициализация UI на случай, если данные уже есть в разметке (например, при возвращении на страницу назад)
+    // инициализация UI на случай, если данные уже есть в разметке
     const initialGameData = document.getElementById('gameData');
     if (initialGameData && initialGameData.dataset) {
       const initial = {
@@ -221,14 +271,20 @@ if (window.__8ball_script_loaded) {
       updateUI(initial);
     }
   }
+
   function handleStart(clientX, clientY) {
     if (!gameState) return;
     const pos = screenToGame(clientX, clientY);
 
-    if (ballInHand && myTurn) {
+    // разрешение поставить биток только если сервер уже применил смену хода и игра не движется
+    const canPlace = ballInHand && myTurn && gameState && !gameState.is_moving;
+    if (canPlace) {
       placeCueAt(pos.x, pos.y);
       return;
     }
+
+    // если сейчас режим ball in hand у кого-то, но это не твой ход, запрет на прицеливание
+    if (gameState && (gameState.ball_in_hand || gameState.ballInHand)) return;
 
     if (gameState.is_moving) return;
     if (!myTurn) return;
@@ -244,9 +300,14 @@ if (window.__8ball_script_loaded) {
   }
 
   function handleMove(clientX, clientY) {
+    // если биток можно поставить, не трогаем прицеливание
     if (!myTurn) return;
-    const pos = screenToGame(clientX, clientY);
     if (!gameState) return;
+
+    // если сейчас у кого-то ball in hand, отключаем прицеливание
+    if (gameState.ball_in_hand || gameState.ballInHand) return;
+
+    const pos = screenToGame(clientX, clientY);
     const cueBall = (gameState.balls || []).find(b => b.number === 0 && !b.pocketed);
     if (!cueBall) return;
     if (grabbed) {
@@ -298,103 +359,118 @@ if (window.__8ball_script_loaded) {
     }).catch(console.error);
   }
 
-function updateUI(data) {
-  try { window.gameState = data; } catch (e) {}
+  // UI обновление
+  function updateUI(data) {
+    try { window.gameState = data; } catch (e) {}
 
-  function setHeader(id, name, isActive) {
-    let el = document.getElementById(id);
-    if (!el) {
-      const maybe = document.querySelector(`#gameHeader .player-info .${id}`) || null;
-      if (maybe) el = maybe;
+    // вытащим наборы игроков если сервер присылает
+    const p1Set = (data.player1_set ?? data.player1Set ?? data.player1Set) || 0;
+    const p2Set = (data.player2_set ?? data.player2Set ?? data.player2Set) || 0;
+
+    function setHeader(id, name, isActive, setType) {
+      let el = document.getElementById(id);
+      if (!el) {
+        const maybe = document.querySelector(`#gameHeader .player-info .${id}`) || null;
+        if (maybe) el = maybe;
+      }
+      if (!el && id === 'headerPlayer1') el = document.getElementById('player1Info');
+      if (!el && id === 'headerPlayer2') el = document.getElementById('player2Info');
+
+      if (!el) {
+        const container = document.querySelector('#gameHeader .player-info') || document.getElementById('gameHeader');
+        if (!container) return;
+        el = document.createElement('div');
+        el.id = id;
+        el.className = 'player-info-name';
+        container.insertBefore(el, container.firstChild || null);
+      }
+
+      // ensure .turn-ball and .player-title and .player-set exist
+      let ball = el.querySelector(':scope > .turn-ball');
+      if (!ball) {
+        ball = document.createElement('span');
+        ball.className = 'turn-ball';
+        el.insertBefore(ball, el.firstChild);
+      }
+      let title = el.querySelector(':scope > .player-title');
+      if (!title) {
+        title = document.createElement('span');
+        title.className = 'player-title';
+        el.appendChild(title);
+      }
+      let setEl = el.querySelector(':scope > .player-set');
+      if (!setEl) {
+        setEl = document.createElement('span');
+        setEl.className = 'player-set';
+        setEl.style.marginLeft = '8px';
+        setEl.style.fontSize = '0.9em';
+        setEl.style.color = '#666';
+        el.appendChild(setEl);
+      }
+
+      title.textContent = name || '';
+      let setText = '';
+      if (setType === 1) setText = 'сплошные';
+      else if (setType === 2) setText = 'полосатые';
+      setEl.textContent = setText;
+
+      // рендерим шарик в зависимости от набора и активности
+      renderTurnBall(ball, setType || 0, !!isActive);
+
+      el.classList.toggle('active', !!isActive);
+      // визуальный акцент на имени
+      title.classList.toggle('active', !!isActive);
     }
-    // последний fallback — legacy span
-    if (!el && id === 'headerPlayer1') el = document.getElementById('player1Info');
-    if (!el && id === 'headerPlayer2') el = document.getElementById('player2Info');
 
-    // если всё ещё нет — создадим в .player-info
-    if (!el) {
-      const container = document.querySelector('#gameHeader .player-info') || document.getElementById('gameHeader');
-      if (!container) return;
-      el = document.createElement('div');
-      el.id = id;
-      el.className = 'player-info-name';
-      container.insertBefore(el, container.firstChild || null);
+    // header
+    setHeader('headerPlayer1', data.player1 || '', (data.current_player || data.current) === 1, p1Set);
+    setHeader('headerPlayer2', data.player2 || '', (data.current_player || data.current) === 2, p2Set);
+
+    // gutter (правый)
+    const gutterP1 = document.getElementById('gutterPlayer1');
+    if (gutterP1) {
+      const nameSpan = gutterP1.querySelector('.player-name') || gutterP1;
+      if (nameSpan) nameSpan.textContent = data.player1 || '';
+      const indicator = gutterP1.querySelector('.turn-indicator');
+      if (indicator) indicator.classList.toggle('active', (data.current_player || data.current) === 1);
+    }
+    const gutterP2 = document.getElementById('gutterPlayer2');
+    if (gutterP2) {
+      const nameSpan = gutterP2.querySelector('.player-name') || gutterP2;
+      if (nameSpan) nameSpan.textContent = data.player2 || '';
+      const indicator = gutterP2.querySelector('.turn-indicator');
+      if (indicator) indicator.classList.toggle('active', (data.current_player || data.current) === 2);
     }
 
-    // убедимся, что внутри есть .turn-ball и .player-title
-    let ball = el.querySelector(':scope > .turn-ball');
-    if (!ball) {
-      ball = document.createElement('span');
-      ball.className = 'turn-ball';
-      el.insertBefore(ball, el.firstChild);
+    // legacy spans
+    const legacyP1 = document.getElementById('player1Info');
+    if (legacyP1) {
+      legacyP1.textContent = (legacyP1.getAttribute('data-prefix') || '') + (data.player1 || '-');
+      legacyP1.classList.toggle('active', (data.current_player || data.current) === 1);
+      let lb = legacyP1.querySelector('.turn-ball');
+      if (!lb) {
+        lb = document.createElement('span'); lb.className = 'turn-ball legacy';
+        legacyP1.insertBefore(lb, legacyP1.firstChild);
+      }
+      renderTurnBall(lb, p1Set || 0, (data.current_player || data.current) === 1);
     }
-    let title = el.querySelector(':scope > .player-title');
-    if (!title) {
-      title = document.createElement('span');
-      title.className = 'player-title';
-      el.appendChild(title);
+    const legacyP2 = document.getElementById('player2Info');
+    if (legacyP2) {
+      legacyP2.textContent = (legacyP2.getAttribute('data-prefix') || '') + (data.player2 || '-');
+      legacyP2.classList.toggle('active', (data.current_player || data.current) === 2);
+      let lb = legacyP2.querySelector('.turn-ball');
+      if (!lb) {
+        lb = document.createElement('span'); lb.className = 'turn-ball legacy';
+        legacyP2.insertBefore(lb, legacyP2.firstChild);
+      }
+      renderTurnBall(lb, p2Set || 0, (data.current_player || data.current) === 2);
     }
-
-    // установить имя
-    title.textContent = name || '';
-
-    // отобразить/скрыть шарик и проставить класс активности
-    ball.style.display = name ? 'inline-block' : 'none';
-    ball.classList.toggle('on', !!isActive);
-    el.classList.toggle('active', !!isActive);
   }
-
-  // header (из data приходят player1, player2, current_player)
-  setHeader('headerPlayer1', data.player1 || '', data.current_player === 1);
-  setHeader('headerPlayer2', data.player2 || '', data.current_player === 2);
-
-  // gutter (правый) — если есть
-  const gutterP1 = document.getElementById('gutterPlayer1');
-  if (gutterP1) {
-    const nameSpan = gutterP1.querySelector('.player-name') || gutterP1;
-    if (nameSpan) nameSpan.textContent = data.player1 || '';
-    const indicator = gutterP1.querySelector('.turn-indicator');
-    if (indicator) indicator.classList.toggle('active', data.current_player === 1);
-  }
-  const gutterP2 = document.getElementById('gutterPlayer2');
-  if (gutterP2) {
-    const nameSpan = gutterP2.querySelector('.player-name') || gutterP2;
-    if (nameSpan) nameSpan.textContent = data.player2 || '';
-    const indicator = gutterP2.querySelector('.turn-indicator');
-    if (indicator) indicator.classList.toggle('active', data.current_player === 2);
-  }
-
-  const legacyP1 = document.getElementById('player1Info');
-  if (legacyP1) {
-    legacyP1.textContent = (legacyP1.getAttribute('data-prefix') || '') + (data.player1 || '-');
-    legacyP1.classList.toggle('active', data.current_player === 1);
-  let lb = legacyP1.querySelector('.turn-ball');
-    if (!lb) {
-      lb = document.createElement('span'); lb.className = 'turn-ball legacy';
-      legacyP1.insertBefore(lb, legacyP1.firstChild);
-    }
-    lb.style.display = data.player1 ? 'inline-block' : 'none';
-    lb.classList.toggle('on', data.current_player === 1);
-  }
-  const legacyP2 = document.getElementById('player2Info');
-  if (legacyP2) {
-    legacyP2.textContent = (legacyP2.getAttribute('data-prefix') || '') + (data.player2 || '-');
-    legacyP2.classList.toggle('active', data.current_player === 2);
-    let lb = legacyP2.querySelector('.turn-ball');
-    if (!lb) {
-      lb = document.createElement('span'); lb.className = 'turn-ball legacy';
-      legacyP2.insertBefore(lb, legacyP2.firstChild);
-    }
-    lb.style.display = data.player2 ? 'inline-block' : 'none';
-    lb.classList.toggle('on', data.current_player === 2);
-  }
-}
 
   function gameLoop() {
     if (!ctx || !canvas) return;
     const rect = canvas.getBoundingClientRect();
     if (rect.width !== lastRect.width || rect.height !== lastRect.height) {
-      // Если размер изменился, обновляем канвас. Иногда браузеры могут отдать 0x0 при первом запросе, поэтому делаем несколько попыток с задержкой.
       const immediateRect = canvas.getBoundingClientRect();
       if (immediateRect.width && immediateRect.height) {
         dpr = window.devicePixelRatio || 1;
@@ -462,15 +538,19 @@ function updateUI(data) {
     ctx.fillRect(playX, playY, playW, playH);
     ctx.restore();
 
-    if (ballInHand && myTurn) {
+    // Показ подсказки поставить биток.
+    // Показать только если ballInHand и это твой ход и игра НЕ движется
+    const showPlaceHint = !!(ballInHand && myTurn && gameState && !gameState.is_moving);
+    if (showPlaceHint) {
       ctx.save();
       ctx.font = `${Math.max(12, 18 * Math.min(scale,1))}px sans-serif`;
-      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
       ctx.textAlign = 'center';
-      ctx.fillText('Нажмите по столу, чтобы поставить биток', playX + playW/2, playY + 30);
+      ctx.fillText('Нажми по столу, чтобы поставить биток', playX + playW/2, playY + 30);
       ctx.restore();
     }
 
+    // если одного игрока нет, показываем ожидание
     if (gameState && (!gameState.player2 || gameState.player2 === '')) {
       ctx.save();
       const textColor = '#0b6f18';
@@ -522,6 +602,21 @@ function updateUI(data) {
       ctx.beginPath();
       ctx.arc(sx, sy, screwRad, 0, Math.PI * 2);
       ctx.fill();
+    }
+
+    // overlay для окончания игры, если сервер присылает флаг
+    const gameOver = !!(gameState && (gameState.game_over || gameState.gameOver || gameState.GameOver));
+    if (gameOver) {
+      const winnerIdx = (gameState && (gameState.winner || gameState.Winner)) || 0;
+      const winnerName = winnerIdx === 1 ? (gameState.player1 || '') : (winnerIdx === 2 ? (gameState.player2 || '') : '');
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(playX + 10, playY + playH/2 - 50, playW - 20, 100);
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.font = `${Math.max(18, 28 * Math.min(scale, 1))}px sans-serif`;
+      ctx.fillText(winnerName ? `Победитель: ${winnerName}` : 'Игра окончена', playX + playW/2, playY + playH/2);
+      ctx.restore();
     }
   }
 
@@ -584,7 +679,8 @@ function updateUI(data) {
 
   function drawCue() {
     if (!gameState || !gameState.balls) return;
-    if (ballInHand && myTurn) return;
+    // если у текущего игрока режим ball in hand, не рисуем кий
+    if ((gameState.ball_in_hand || gameState.ballInHand) && myTurn) return;
 
     const cueBall = gameState.balls.find(b => b.number === 0 && !b.pocketed);
     if (!cueBall) return;
