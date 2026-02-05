@@ -32,7 +32,7 @@ func NewShakeHandler(gameService *service.GameService) (*ShakeHandler, error) {
 
 func (h *ShakeHandler) GetHome(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	h.templates.ExecuteTemplate(w, "index.html", nil)
+	h.templates.ExecuteTemplate(w, "base.html", nil)
 }
 
 func (h *ShakeHandler) JoinGame(w http.ResponseWriter, r *http.Request) {
