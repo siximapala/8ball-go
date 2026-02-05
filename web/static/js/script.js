@@ -4,9 +4,8 @@ if (window.__8ball_script_loaded) {
 } else {
   window.__8ball_script_loaded = true;
 
-  // -----------------------
-  // State & constants
-  // -----------------------
+
+  // Константы и состояние
   let gameId = '';
   let canvas = null;
   let ctx = null;
@@ -34,15 +33,13 @@ if (window.__8ball_script_loaded) {
   let totalGameHeight = TABLE_HEIGHT + RAIL_SIZE * 2;
   let ballInHand = false;
 
-  // lifecycle resources
+  // ресурсы для отрисовки и связи с сервером храним для завершения
   let es = null;
   let rafId = null;
   let handlers = {};
   let debouncedResize = null;
 
-  // -----------------------
-  // Utils
-  // -----------------------
+  // Ресайз с дебаунсом
   function debounce(fn, ms = 100) {
     let t;
     const wrapper = (...args) => {
@@ -53,9 +50,7 @@ if (window.__8ball_script_loaded) {
     return wrapper;
   }
 
-  // -----------------------
-  // Teardown
-  // -----------------------
+  // Удаление игры и очистка ресурсов
   function teardownGame() {
     if (es) {
       try { es.close(); } catch (e) {}
@@ -96,9 +91,7 @@ if (window.__8ball_script_loaded) {
     debouncedResize = null;
   }
 
-  // -----------------------
-  // Init game
-  // -----------------------
+  // Инициализируем игру
   function initGame(id, playerName) {
     teardownGame();
 
@@ -109,11 +102,10 @@ if (window.__8ball_script_loaded) {
     if (!canvas) throw new Error('Canvas #billiardsTable not found');
     ctx = canvas.getContext('2d');
 
-    // resizeCanvas with retry logic
+    // resizeCanvas с внутренней функцией
     function resizeCanvas() {
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
-      // if rect is zero-sized, we don't set canvas dims yet (retry mechanism below)
       if (!rect.width || !rect.height) return;
 
       dpr = window.devicePixelRatio || 1;
@@ -125,32 +117,29 @@ if (window.__8ball_script_loaded) {
       lastRect.height = rect.height;
     }
 
-    // robust ensureResize: immediate + rAF + small retries in case layout not yet settled
     let resizeAttempts = 0;
     function ensureResize() {
       resizeCanvas();
       const rect = canvas.getBoundingClientRect();
       if ((rect.width === 0 || rect.height === 0) && resizeAttempts < 6) {
         resizeAttempts++;
-        // try again after next frame
         requestAnimationFrame(ensureResize);
       } else if (rect.width === 0 || rect.height === 0) {
-        // as a final fallback, try with setTimeout
         setTimeout(() => { resizeCanvas(); }, 100);
       }
     }
 
-    // debounced handlers for window events
+    // устанавливаем обработчики ресайза
     handlers.resize = debounce(resizeCanvas, 120);
     handlers.orientation = debounce(resizeCanvas, 200);
 
     window.addEventListener('resize', handlers.resize);
     window.addEventListener('orientationchange', handlers.orientation);
 
-    // run immediate resize attempts
+    // начальный ресайз
     ensureResize();
 
-    // animation loop
+    // луп анимации
     function loop() {
       gameLoop();
       rafId = requestAnimationFrame(loop);
@@ -186,7 +175,7 @@ if (window.__8ball_script_loaded) {
 
           updateUI(data);
         } catch (err) {
-          // ignore
+        
         }
       };
       es.onerror = (err) => {
@@ -194,7 +183,7 @@ if (window.__8ball_script_loaded) {
       };
     }
 
-    // Input handlers (stored for cleanup)
+    // Хэндлеры ввода (мышь и скрин тач )
     handlers.canvas_mousedown = (e) => handleStart(e.clientX, e.clientY);
     handlers.mousemove = (e) => handleMove(e.clientX, e.clientY);
     handlers.mouseup = () => handleEnd();
@@ -221,7 +210,7 @@ if (window.__8ball_script_loaded) {
     document.addEventListener('touchmove', handlers.touchmove, { passive: false });
     document.addEventListener('touchend', handlers.touchend, { passive: false });
 
-    // initial UI update if server provided data
+    // инициализация UI на случай, если данные уже есть в разметке (например, при возвращении на страницу назад)
     const initialGameData = document.getElementById('gameData');
     if (initialGameData && initialGameData.dataset) {
       const initial = {
@@ -232,10 +221,6 @@ if (window.__8ball_script_loaded) {
       updateUI(initial);
     }
   }
-
-  // -----------------------
-  // Input handlers & logic (unchanged)
-  // -----------------------
   function handleStart(clientX, clientY) {
     if (!gameState) return;
     const pos = screenToGame(clientX, clientY);
@@ -313,9 +298,6 @@ if (window.__8ball_script_loaded) {
     }).catch(console.error);
   }
 
-  // -----------------------
-  // UI updates (unchanged)
-  // -----------------------
   function updateUI(data) {
     const headerP1 = document.getElementById('headerPlayer1');
     const headerP2 = document.getElementById('headerPlayer1') ? document.getElementById('headerPlayer2') : null;
@@ -362,20 +344,11 @@ if (window.__8ball_script_loaded) {
       legacyP2.classList.toggle('active', data.current_player === 2);
     }
   }
-
-  // -----------------------
-  // Render & drawing (only small tweak: call resizeCanvas immediately if rect changed)
-  // -----------------------
   function gameLoop() {
     if (!ctx || !canvas) return;
     const rect = canvas.getBoundingClientRect();
     if (rect.width !== lastRect.width || rect.height !== lastRect.height) {
-      // call resizeCanvas synchronously to update backing store immediately
-      // handlers.resize is debounced; we want immediate effect here
-      // locate the inner resize function by simulating small call:
-      // We'll call handlers.resize() if it exists to schedule, but also try immediate effect:
-      // Immediate effect:
-      // define temporary direct resize routine same as in init (safe to call)
+      // Если размер изменился, обновляем канвас. Иногда браузеры могут отдать 0x0 при первом запросе, поэтому делаем несколько попыток с задержкой.
       const immediateRect = canvas.getBoundingClientRect();
       if (immediateRect.width && immediateRect.height) {
         dpr = window.devicePixelRatio || 1;
@@ -662,7 +635,7 @@ if (window.__8ball_script_loaded) {
     }
   }
 
-  // coords helpers
+  // Преобразование координат между экраном и игровым пространством
   function screenToGame(clientX, clientY) {
     if (!canvas) return { x: 0, y: 0, scale: 1, offsetX: 0, offsetY: 0 };
     const rect = canvas.getBoundingClientRect();
@@ -694,7 +667,7 @@ if (window.__8ball_script_loaded) {
     return { x: sx, y: sy, scale };
   }
 
-  // Exports & HTMX hooks
+  // HTMX + инициализация при загрузке страницы
   window.initGame = initGame;
 
   document.body.addEventListener('htmx:afterSwap', (e) => {
@@ -723,4 +696,4 @@ if (window.__8ball_script_loaded) {
       try { initGame(id, player); } catch (err) { console.error('initGame error on load', err); }
     }
   });
-} // end guard
+}
